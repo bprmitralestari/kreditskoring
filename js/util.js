@@ -17,7 +17,7 @@ const jam = v => String(v || '').replace('T', ' ').slice(0, 16);
 const pctTampil = v => (num(v) * 100).toFixed(2) + '%';
 
 const ROLE_LABEL = {
-  AO: 'Account Officer', MANAJER_OPS: 'Manajer Operasional', PIMPINAN_CABANG: 'Pimpinan Cabang',
+  AO: 'Account Officer', MANAJER_OPS: 'Manajer Marketing', PIMPINAN_CABANG: 'Pimpinan Cabang',
   DIREKTUR_UTAMA: 'Direktur Utama', ADMIN: 'Administrator',
 };
 
@@ -137,3 +137,62 @@ function debounce(fn, ms = 350) {
 
 // Lencana status tidak berubah; ikon SVG kecil untuk sidebar
 const svg = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+
+// ============================================================
+// v3: DIALOG DI TENGAH LAYAR & KOMPRESI GAMBAR
+// ============================================================
+
+// Dialog pesan di tengah layar. Mengembalikan Promise berisi key tombol yang ditekan.
+const Dialog = {
+  show({ tone = 'error', title = '', items = [], actions = [{ label: 'Tutup', key: 'close', cls: 'btn-primary' }] } = {}) {
+    return new Promise(resolve => {
+      const ikon = { error: '!', warn: '!', ok: '✓', info: 'i' }[tone] || '!';
+      const wrap = document.createElement('div');
+      wrap.className = 'overlay';
+      wrap.innerHTML = `
+        <div class="modal dlg dlg-${tone}" role="alertdialog" aria-modal="true">
+          <div class="dlg-ic">${ikon}</div>
+          <h3 class="dlg-title">${esc(title)}</h3>
+          ${items.length ? `<ul class="dlg-list">${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}
+          <div class="dlg-act">${actions.map(a => `<button class="${a.cls || 'btn-secondary'}" data-key="${esc(a.key)}">${esc(a.label)}</button>`).join('')}</div>
+        </div>`;
+      const done = key => {
+        document.removeEventListener('keydown', onKey);
+        wrap.remove();
+        resolve(key);
+      };
+      const onKey = e => { if (e.key === 'Escape') done('close'); };
+      wrap.addEventListener('click', e => {
+        const b = e.target.closest('[data-key]');
+        if (b) done(b.dataset.key);
+      });
+      document.addEventListener('keydown', onKey);
+      document.body.appendChild(wrap);
+      const first = wrap.querySelector('[data-key]');
+      if (first) first.focus();
+    });
+  },
+};
+
+// Kecilkan gambar di browser (sisi terpanjang maks. maxSide px, JPEG). Mengembalikan { data, mime }.
+function compressImage(file, maxSide = 1600, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const r = new FileReader();
+    r.onerror = () => reject(new Error('Berkas tidak dapat dibaca.'));
+    r.onload = () => { img.src = r.result; };
+    img.onerror = () => reject(new Error('Gambar tidak dapat dibaca.'));
+    img.onload = () => {
+      const k = Math.min(1, maxSide / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.width * k));
+      c.height = Math.max(1, Math.round(img.height * k));
+      const g = c.getContext('2d');
+      g.fillStyle = '#FFFFFF';          // PNG transparan menjadi latar putih
+      g.fillRect(0, 0, c.width, c.height);
+      g.drawImage(img, 0, 0, c.width, c.height);
+      resolve({ data: c.toDataURL('image/jpeg', quality).split(',')[1], mime: 'image/jpeg' });
+    };
+    r.readAsDataURL(file);
+  });
+}

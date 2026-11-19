@@ -105,13 +105,15 @@ function berkasGrid(ctx, bagian, readonly = false) {
 }
 
 // Isi thumbnail gambar dari server (dipanggil setelah render)
+// Isi thumbnail gambar dari server secara paralel (cache memori mencegah pemuatan ulang)
 async function loadThumbs(root = document) {
   const imgs = $$('img[data-berkas]', root);
-  for (const img of imgs) {
+  await Promise.all(imgs.map(async img => {
+    if (img.dataset.loaded) return;
     const r = await Api.call('img', { id_berkas: img.dataset.berkas });
-    if (r.ok) img.src = r.data;
+    if (r.ok) { img.src = r.data; img.dataset.loaded = '1'; }
     else img.alt = 'Gagal memuat';
-  }
+  }));
 }
 
 // ============================================================
@@ -119,32 +121,45 @@ async function loadThumbs(root = document) {
 // ============================================================
 const Pages = {};
 
+// Teks bawaan halaman login (dipakai bila Admin belum mengatur tampilan)
+const LOGIN_DEFAULT = {
+  judul_utama: 'Kelola Data,\nRaih Produktivitas Maksimal',
+  judul_produk: 'Kredit Skoring',
+  deskripsi: 'Solusi terintegrasi untuk menilai kredit skoring calon debitur dengan lebih mudah, cepat, dan terukur.',
+  fitur: ['Aman & Terpercaya', 'Proses Cepat', 'Meningkatkan Produktivitas'],
+  judul_kartu: 'Selamat Datang!',
+  subjudul_kartu: 'Silakan masuk ke akun Anda untuk melanjutkan.',
+  overlay_persen: 0,
+};
+
 Pages.login = () => {
-  const T = App.tampilan || {};
-  const ov = Math.min(95, Math.max(0, Number(T.overlay_persen ?? 85))) / 100;
-  const latar = App.bg
-    ? `background-image:linear-gradient(rgba(11,27,63,${ov}),rgba(11,27,63,${ov})),url('${App.bg}');` +
-      'background-size:cover;background-position:center;'
+  const T = Object.assign({}, LOGIN_DEFAULT, App.tampilan || {});
+  const pOv = Number(T.overlay_persen);
+  const ov = (isNaN(pOv) ? 0 : Math.min(95, Math.max(0, pOv))) / 100;
+  const fitur = Array.isArray(T.fitur) ? T.fitur : [];
+
+  // Lapisan warna gelap hanya dipasang bila Admin mengaturnya lebih dari 0%
+  const bgHtml = App.bg
+    ? `<div class="lb-img" style="background-image:url('${App.bg}')"></div>` +
+      (ov > 0 ? `<div class="lb-ov" style="background:rgba(11,27,63,${ov})"></div>` : '')
     : '';
-  const judul = esc(T.judul_utama || '').replace(/\n/g, '<br>');
-  const fitur = (T.fitur || []).map(x => `<li>${esc(x)}</li>`).join('');
 
   $('#app').innerHTML = `
   <div class="auth-split">
-    <section class="auth-brand" style="${latar}">
+    <section class="auth-brand">
+      ${bgHtml}
       <div class="brand-row"><div class="brand-mark">K</div><b>${esc(App.brand)}</b></div>
-      <h1>${judul}</h1>
-      <h3>${esc(T.judul_produk || APP_NAME)}</h3>
-      <p>${esc(T.deskripsi || '')}</p>
-      <ul class="feat">${fitur}</ul>
+      <h1>${esc(T.judul_utama).replace(/\n/g, '<br>')}</h1>
+      <h3>${esc(T.judul_produk)}</h3>
+      <p>${esc(T.deskripsi)}</p>
+      <ul class="feat">${fitur.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
     </section>
     <section class="auth-card-wrap">
       <form class="auth-card" id="fLogin" novalidate>
-        <h2>${esc(T.judul_kartu || 'Selamat Datang!')}</h2>
-        <p class="muted">${esc(T.subjudul_kartu || '')}</p>
+        <h2>${esc(T.judul_kartu)}</h2>
+        <p class="muted">${esc(T.subjudul_kartu)}</p>
         <label class="fld"><span>Username</span><input class="input" name="u" autocomplete="username" required></label>
         <label class="fld"><span>Password</span><input class="input" name="p" type="password" autocomplete="current-password" required></label>
-        <div id="loginErr" class="alert" hidden></div>
         <button class="btn-primary btn-block" id="btnLogin" type="submit">Masuk →</button>
       </form>
     </section>
@@ -153,37 +168,47 @@ Pages.login = () => {
   $('#fLogin').onsubmit = async e => {
     e.preventDefault();
     const f = e.target;
-    const err = $('#loginErr');
-    err.hidden = true;
     const u = f.querySelector('[name=u]').value.trim();
     const p = f.querySelector('[name=p]').value;
-    if (!u || !p) { err.textContent = 'Username dan password wajib diisi.'; err.hidden = false; return; }
+    if (!u || !p) {
+      return Dialog.show({ tone: 'error', title: 'Data belum lengkap',
+        items: ['Username dan password wajib diisi.'], actions: [{ label: 'Mengerti', key: 'close', cls: 'btn-primary' }] });
+    }
     const btn = $('#btnLogin');
     btn.disabled = true; btn.textContent = 'Memproses…';
     const r = await Api.call('login', { u, p });
     btn.disabled = false; btn.textContent = 'Masuk →';
-    if (!r.ok) { err.textContent = r.msg || 'Login gagal.'; err.hidden = false; f.querySelector('[name=p]').value = ''; return; }
+    if (!r.ok) {
+      f.querySelector('[name=p]').value = '';
+      return Dialog.show({ tone: 'error', title: 'Login gagal',
+        items: [r.msg || 'Login gagal.'], actions: [{ label: 'Coba lagi', key: 'close', cls: 'btn-primary' }] });
+    }
     Session.set({ token: r.token, user: r.user });
     location.hash = r.user.mustChange ? '#/ganti' : '#/dashboard';
   };
 };
 
 // Form ganti password (dipakai halaman wajib-ganti dan Akun Saya)
+// Form ganti password (dipakai halaman wajib-ganti, Akun Saya, dan tombol Ubah Password)
 function pwForm(form, onOk) {
+  const gagal = msg => Dialog.show({
+    tone: 'error', title: 'Password belum dapat disimpan', items: [msg],
+    actions: [{ label: 'Mengerti', key: 'close', cls: 'btn-primary' }],
+  });
   form.onsubmit = async e => {
     e.preventDefault();
     const o = form.querySelector('[name=o]').value;
     const n = form.querySelector('[name=n]').value;
     const c = form.querySelector('[name=c]').value;
-    if (!o || !n || !c) return Toast.show('Semua kolom password wajib diisi.', 'error');
-    if (n.length < 6) return Toast.show('Password baru minimal 6 karakter.', 'error');
-    if (n !== c) return Toast.show('Ulangi password baru tidak sama.', 'error');
-    if (n === o) return Toast.show('Password baru harus berbeda.', 'error');
+    if (!o || !n || !c) return gagal('Semua kolom password wajib diisi.');
+    if (n.length < 6) return gagal('Password baru minimal 6 karakter.');
+    if (n !== c) return gagal('Ulangi password baru tidak sama dengan password baru.');
+    if (n === o) return gagal('Password baru harus berbeda dari password lama.');
     const btn = form.querySelector('button[type=submit]');
     btn.disabled = true;
     const r = await Api.call('mypass', { oldp: o, newp: n });
     btn.disabled = false;
-    if (!r.ok) return Toast.show(r.msg || 'Gagal mengganti password.', 'error');
+    if (!r.ok) return gagal(r.msg || 'Gagal mengganti password.');
     Toast.show('Password berhasil diganti.', 'ok');
     form.reset();
     onOk();
@@ -357,7 +382,7 @@ Pages.persetujuan = async () => {
       <tbody>${rows.length ? rows.map(x => `
         <tr><td>${esc(x.sppk)}</td><td>${esc(x.nama_debitur)}</td><td>${esc(x.kantor)}</td>
           <td class="num">${rp(x.plafon)}</td><td>${chipPred(x.predikat)}</td><td>${jam(x.diajukan)}</td>
-          <td><a class="btn-primary sm" href="#/persetujuan/${esc(x.id)}">Review</a></td></tr>`).join('')
+          <td><a class="btn-review btn-primary" href="#/persetujuan/${esc(x.id)}">Review Permohonan →</a></td></tr>`).join('')
         : '<tr><td colspan="7" class="muted">Tidak ada permohonan yang menunggu keputusan Anda.</td></tr>'}
       </tbody></table></div>`;
 };
@@ -463,8 +488,23 @@ async function downloadPdf(id) {
 }
 
 // ============================================================
-// FORM PERMOHONAN (3 langkah)
+// FORM PERMOHONAN (4 langkah: Data · Arus Kas · 5C · Pratinjau & Ajukan)
 // ============================================================
+const FLAT_IND = KRITERIA.flatMap(p => p.items);          // urutan sama dengan IND di server
+const pctTxt = v => (v == null ? '-' : (Math.round(v * 1000) / 10) + '%');
+const adaBerkas = (ctx, bagian) => (ctx.berkas || []).some(b => b.bagian === bagian);
+const sektorNama = (ctx, kode) => {
+  const s = (ctx.sektor || []).find(x => x.kode === kode);
+  return s ? s.kode + ' — ' + s.nama : (kode || '-');
+};
+const fotoGroups = ctx => {
+  const d = ctx.draft;
+  const list = [{ bagian: 'fotoDebitur', label: 'Foto identitas debitur' }];
+  (d.relasi || []).forEach((r, i) => list.push({ bagian: `relasi.${i}.foto`, label: `Relasi ${i + 1}${r.nama ? ' · ' + r.nama : ''}` }));
+  (d.agunan || []).forEach((a, i) => list.push({ bagian: `agunan.${i}.dok`, label: `Dokumen agunan ${i + 1}${a.nama ? ' · ' + a.nama : ''}` }));
+  return list.map(g => ({ ...g, count: (ctx.berkas || []).filter(b => b.bagian === g.bagian).length }));
+};
+
 async function loadSektor() {
   if (!App.cache.sektor) {
     const r = await Api.call('sektor');
@@ -474,25 +514,77 @@ async function loadSektor() {
 }
 
 Pages.form = async (id, step = 1) => {
-  step = Math.min(3, Math.max(1, Number(step) || 1));
-  const ctx = { id: id || null, step, draft: blankForm(), berkas: [], rec: null, last: null };
+  step = Math.min(4, Math.max(1, Number(step) || 1));
+  const ctx = {
+    id: id || null, step, draft: blankForm(), berkas: [], rec: null,
+    last: null, penyetuju: '', invalid: new Set(), saveQ: Promise.resolve(), timer: null,
+  };
+  const [r, sek] = await Promise.all([id ? Api.call('get', { id }) : Promise.resolve(null), loadSektor()]);
   if (id) {
-    const r = await Api.call('get', { id });
     if (!r.ok) return App.error(r.msg);
     if (!r.bisaUbah) return App.error('Permohonan ini tidak dapat diubah pada status saat ini.');
     ctx.rec = r.rec;
     ctx.berkas = r.berkas || [];
     ctx.draft = Object.assign(blankForm(), r.form);
   }
-  ctx.sektor = await loadSektor();
+  ctx.sektor = sek;
   renderForm(ctx);
 };
 
-const STEP_TITLES = ['Data Debitur & Agunan', 'Arus Kas & Neraca', 'Penilaian Kertas Kerja 5C'];
-const STEP_FN = [stepDebitur, stepArus, stepPenilaian];
+const STEP_TITLES = ['Data Debitur & Agunan', 'Arus Kas & Neraca', 'Penilaian Kertas Kerja 5C', 'Pratinjau & Ajukan'];
+const STEP_FN = [stepDebitur, stepArus, stepPenilaian, stepPratinjau];
 
+// ---------- Validasi ----------
+// sev: 'error' = wajib (menghalangi pengajuan), 'warn' = catatan saja
+function cekStep(ctx, n) {
+  const d = ctx.draft, out = [];
+  const add = (k, msg, sev = 'error') => out.push({ step: n, k, msg, sev });
+
+  if (n === 1) {
+    if (!d.jenis_permohonan) add('jenis_permohonan', 'Jenis permohonan belum dipilih');
+    if (!d.skema) add('skema', 'Skema pembayaran belum dipilih');
+    if (!d.jenis_debitur) add('jenis_debitur', 'Jenis calon debitur belum dipilih');
+    if (!String(d.nama || '').trim()) add('nama', 'Nama lengkap debitur belum diisi');
+    if (!/^\d{16}$/.test(String(d.nik || ''))) add('nik', d.nik ? 'NIK harus 16 digit angka' : 'NIK belum diisi');
+    if (!d.sektor) add('sektor', 'Sektor ekonomi belum dipilih');
+    (d.agunan || []).forEach((a, i) => {
+      const no = `Agunan ${i + 1}`;
+      const bilyet = a.jenis === 'Bilyet Deposito';
+      if (!a.jenis) add(`agunan.${i}.jenis`, `${no}: jenis agunan belum dipilih`);
+      if (!(num(bilyet ? a.nominalD : a.taksasi) > 0)) {
+        add(bilyet ? `agunan.${i}.nominalD` : `agunan.${i}.taksasi`,
+          `${no}: ${bilyet ? 'nominal deposito' : 'nilai taksasi'} belum diisi`);
+      }
+    });
+    if (!adaBerkas(ctx, 'fotoDebitur')) add(null, 'Foto identitas debitur belum diunggah', 'warn');
+  }
+
+  if (n === 2) {
+    if (!(num(d.plafon) > 0)) add('plafon', 'Usulan plafon belum diisi');
+    if (!(num(d.tenor) > 0)) add('tenor', 'Jangka waktu (bulan) belum diisi');
+    if (!(num(d.bunga) > 0)) add('bunga', 'Suku bunga flat belum diisi');
+    if (!d.jenis_angsuran) add('jenis_angsuran', 'Jenis angsuran belum dipilih');
+    const a = d.arus || {};
+    if (!(num(a.gaji) + num(a.usaha) + num(a.lain) > 0)) {
+      add('arus.gaji', 'Pendapatan belum diisi (gaji, omset, atau pendapatan lain)', 'warn');
+    }
+  }
+
+  if (n === 3) {
+    FLAT_IND.forEach(it => {
+      if (it.auto) return;
+      const v = num((d.skor || {})[it.k]);
+      if (!(v >= 1 && v <= 5)) add('skor:' + it.k, `Penilaian 5C "${it.l}" belum dipilih`);
+    });
+  }
+  return out;
+}
+const cekSemua = ctx => [1, 2, 3].flatMap(n => cekStep(ctx, n));
+
+// ---------- Kerangka form ----------
 function renderForm(ctx) {
   if (!ctx.hitung) attachHitung(ctx);
+  const akhir = ctx.step === 4;
   $('#main').innerHTML = `
     <div class="page-head"><div>
       <a class="link" href="${ctx.id ? '#/permohonan/' + esc(ctx.id) : '#/permohonan'}">← ${ctx.id ? 'Detail permohonan' : 'Daftar permohonan'}</a>
@@ -501,43 +593,81 @@ function renderForm(ctx) {
       <div class="actions"><span class="saved" id="saveState"></span>
         <button class="btn-secondary" data-act="save">Simpan Draft</button></div></div>
     <nav class="stepper">${STEP_TITLES.map((t, i) => `
-      <button class="step ${i + 1 === ctx.step ? 'is-active' : ''} ${i + 1 < ctx.step ? 'is-done' : ''}" data-go="${i + 1}">
-        ${i + 1}. ${esc(t)}</button>`).join('')}</nav>
-    <div class="form-layout">
+      <button class="step ${i + 1 === ctx.step ? 'is-active' : ''} ${i + 1 < ctx.step ? 'is-done' : ''}" data-go="${i + 1}">${i + 1}. ${esc(t)}</button>`).join('')}</nav>
+    <div class="form-layout ${akhir ? 'one' : ''}">
       <section class="card form-main" id="stepBody"></section>
-      <aside class="card preview" id="preview"></aside>
+      ${akhir ? '' : '<aside class="card preview" id="preview"></aside>'}
     </div>
-    <div class="bottombar">
-      ${ctx.step > 1 ? `<button class="btn-secondary" data-go="${ctx.step - 1}">← Sebelumnya</button>` : '<span></span>'}
-      ${ctx.step < 3
-        ? `<button class="btn-primary" data-go="${ctx.step + 1}">Lanjut →</button>`
-        : '<button class="btn-primary" data-act="submit">Ajukan ke Penyetuju</button>'}
-    </div>`;
+    <div class="bottombar" id="bottombar"></div>`;
 
   const main = $('#main');
   main.onclick = e => formClick(e, ctx);
   main.oninput = e => formInput(e, ctx);
   main.onchange = e => formChange(e, ctx);
-
+  updateBottom(ctx);
   renderBody(ctx);
 }
 
+function updateBottom(ctx) {
+  const bar = $('#bottombar');
+  if (!bar) return;
+  const prev = ctx.step > 1
+    ? `<button class="btn-secondary btn-lg" data-go="${ctx.step - 1}">← Sebelumnya</button>` : '<span></span>';
+  const next = ctx.step < 4
+    ? `<button class="btn-primary btn-lg" data-act="next">${ctx.step === 3 ? 'Lanjut ke Pratinjau →' : 'Lanjut →'}</button>`
+    : `<button class="btn-primary btn-lg" data-act="submit">Ajukan ke ${esc(ctx.penyetuju || 'Penyetuju Tahap 1')}</button>`;
+  bar.innerHTML = prev + next;
+}
+
 function renderBody(ctx) {
-  $('#stepBody').innerHTML = STEP_FN[ctx.step - 1](ctx);
-  loadThumbs($('#stepBody'));
+  const body = $('#stepBody');
+  body.innerHTML = STEP_FN[ctx.step - 1](ctx);
+  applyInvalid(ctx);
+  loadThumbs(body);
   ctx.hitung();
 }
 
-// Pratinjau perhitungan (debounce) — hanya tampilan, server tetap sumber kebenaran
+// Tandai field yang bermasalah (merah). Mengembalikan elemen pertama yang ditandai.
+function applyInvalid(ctx) {
+  let first = null;
+  ctx.invalid.forEach(k => {
+    const el = k.startsWith('skor:')
+      ? $(`#stepBody [data-skor="${k.slice(5)}"]`)
+      : $(`#stepBody [data-k="${k}"]`);
+    if (el) { el.classList.add('is-invalid'); first = first || el; }
+  });
+  return first;
+}
+
+function markInvalid(ctx, errs) {
+  errs.forEach(e => { if (e.k) ctx.invalid.add(e.k); });
+  const el = applyInvalid(ctx);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function markOk(ctx, el) {
+  el.classList.remove('is-invalid');
+  ctx.invalid.delete(el.dataset.k || (el.dataset.skor ? 'skor:' + el.dataset.skor : ''));
+}
+
+// Pratinjau perhitungan (debounce). Server tetap sumber kebenaran.
 function attachHitung(ctx) {
   ctx.hitung = debounce(async () => {
     const r = await Api.call('hitung', { form: ctx.draft });
     if (!r.ok) return;
     ctx.last = r;
-    renderPreview(ctx, r);
-  }, 350);
+    if (r.penyetuju) ctx.penyetuju = r.penyetuju;
+    if (ctx.step === 4) {
+      const body = $('#stepBody');
+      if (body) { body.innerHTML = stepPratinjau(ctx); loadThumbs(body); }
+      updateBottom(ctx);
+    } else {
+      renderPreview(ctx, r);
+    }
+  }, 200);
 }
 
+// ---------- Langkah 1: Data debitur ----------
 function stepDebitur(ctx) {
   const d = ctx.draft;
   const sek = ctx.sektor.map(x => `<option value="${esc(x.kode)}" ${x.kode === d.sektor ? 'selected' : ''}>${esc(x.kode)} — ${esc(x.nama)}</option>`).join('');
@@ -608,6 +738,7 @@ function stepDebitur(ctx) {
   <button class="btn-secondary" data-act="addAgunan">+ Tambah agunan</button>`;
 }
 
+// ---------- Langkah 2: Arus kas ----------
 function stepArus(ctx) {
   const d = ctx.draft;
   return `
@@ -636,29 +767,34 @@ function stepArus(ctx) {
   </div>`;
 }
 
+// ---------- Langkah 3: Penilaian 5C ----------
 function stepPenilaian(ctx) {
   const d = ctx.draft;
   const bob = ctx.last ? ctx.last.bobot : null;
-  const pilarW = bob ? Object.values(bob.pilar) : [];
-  const indW = bob ? bob.indikator : {};
-  const pct = v => (v == null ? '-' : Math.round(v * 100) + '%');
+  const kurang = bob ? FLAT_IND.filter(i => bob.indikator[i.k] === undefined).map(i => i.k) : [];
+  const banner = kurang.length
+    ? `<div class="pv-alert pv-err"><b>Bobot indikator belum lengkap di Parameter (${kurang.join(', ')}).</b>
+       Minta Admin melengkapi menu Parameter sebelum penilaian dilakukan.</div>` : '';
+
   return `
   <h3>C. Kertas Kerja Penilaian 5C</h3>
   <p class="muted">Pilih kondisi yang paling sesuai. Skor 5 = paling baik. RPC dihitung otomatis dari arus kas.</p>
+  ${banner}
   ${KRITERIA.map((p, pi) => `
     <div class="pillar">
       <div class="pillar-head"><span class="pn">${pi + 1}</span><b>${esc(p.nama)}</b>
-        <span class="badge badge-draft">Bobot ${pct(pilarW[pi])}</span></div>
-      <table class="table"><thead><tr><th>Indikator</th><th>Bobot</th><th>Pilihan</th><th class="num">Skor</th></tr></thead><tbody>
+        <span class="badge badge-draft">Bobot pilar ${pctTxt(bob ? bob.pilar[p.nama] : undefined)}</span></div>
+      <table class="table"><thead><tr><th>Indikator</th><th class="c">Bobot</th><th>Pilihan</th><th class="num">Skor</th></tr></thead><tbody>
       ${p.items.map(it => {
+        const wInd = bob ? bob.indikator[it.k] : undefined;
         if (it.auto) {
-          const s = ctx.last ? ctx.last.skor_rpc : '-';
           const rpcTxt = ctx.last ? (ctx.last.hasil.rpc * 100).toFixed(2) + '%' : '-';
-          return `<tr><td>${esc(it.l)}</td><td>${pct(indW[it.k])}</td>
-            <td class="muted">Otomatis dari arus kas · RPC ${rpcTxt}</td><td class="num"><b id="rpcCell">${s}</b></td></tr>`;
+          return `<tr><td>${esc(it.l)}</td><td class="c">${pctTxt(wInd)}</td>
+            <td class="muted">Otomatis dari arus kas · RPC ${rpcTxt}</td>
+            <td class="num"><b id="rpcCell">${ctx.last ? ctx.last.skor_rpc : '-'}</b></td></tr>`;
         }
         const cur = Number((d.skor || {})[it.k]) || 0;
-        return `<tr><td>${esc(it.l)}</td><td>${pct(indW[it.k])}</td>
+        return `<tr><td>${esc(it.l)}</td><td class="c">${pctTxt(wInd)}</td>
           <td><select class="input" data-skor="${it.k}"><option value="">- pilih -</option>
             ${[5, 4, 3, 2, 1].map((s, j) => `<option value="${s}" ${cur === s ? 'selected' : ''}>${s} — ${esc(it.o[j])}</option>`).join('')}
           </select></td>
@@ -668,19 +804,101 @@ function stepPenilaian(ctx) {
     </div>`).join('')}`;
 }
 
-// Panel kanan: ringkasan sesuai langkah
+// ---------- Langkah 4: Pratinjau lengkap sebelum diajukan ----------
+function stepPratinjau(ctx) {
+  if (!ctx.last) return '<div class="skeleton"></div>';
+  const d = ctx.draft, h = ctx.last.hasil, bob = ctx.last.bobot;
+  const errs = cekSemua(ctx);
+  const hard = errs.filter(e => e.sev === 'error');
+  const warn = errs.filter(e => e.sev === 'warn');
+  const langkah = [...new Set(hard.map(e => e.step))];
+  const kv = (l, v) => `<div class="pv-kv"><small>${esc(l)}</small><b>${v}</b></div>`;
+  const alamat = [d.alamat, d.desa, d.kecamatan, d.kota].filter(Boolean).join(', ') || '-';
+
+  const agunanRows = (d.agunan || []).map((a, i) => {
+    const hs = ctx.last.agunan[i] || {};
+    return `<tr><td>${esc(a.jenis || '-')}</td><td>${esc(a.nama || '-')}</td><td>${esc(a.bukti || '-')}</td>
+      <td class="num">${rp(hs.taksasi)}</td><td class="num">${rp(hs.likuidasi)}</td></tr>`;
+  }).join('');
+
+  let idx = 0;
+  const rows5 = KRITERIA.map((p, pi) => `
+    <tr class="grup"><td colspan="5">${pi + 1}. ${esc(p.nama)} · bobot pilar ${pctTxt(bob.pilar[p.nama])}</td></tr>` +
+    p.items.map(it => {
+      const det = ctx.last.detail[idx++];
+      const pilihan = it.auto
+        ? `Otomatis dari arus kas (RPC ${(h.rpc * 100).toFixed(2)}%)`
+        : (det.skor ? it.o[5 - det.skor] : 'Belum dipilih');
+      return `<tr><td>${esc(it.l)}</td><td class="c">${pctTxt(det.bobotInd)}</td><td>${esc(pilihan)}</td>
+        <td class="c"><b>${det.skor || '-'}</b></td><td class="c">${det.kontrib.toFixed(4)}</td></tr>`;
+    }).join('')).join('');
+
+  return `
+  ${hard.length
+    ? `<div class="pv-alert pv-err">
+        <b>Belum dapat diajukan: ${hard.length} data belum lengkap</b>
+        <ul>${hard.map(e => `<li><span class="pv-step">Langkah ${e.step}</span>${esc(e.msg)}</li>`).join('')}</ul>
+        <div class="pv-jump">${langkah.map(s => `<button class="btn-primary" data-go="${s}">Perbaiki Langkah ${s}</button>`).join('')}</div>
+       </div>`
+    : `<div class="pv-alert pv-ok"><b>✓ Semua data wajib sudah lengkap.</b>
+        Periksa sekali lagi, lalu ajukan ke ${esc(ctx.penyetuju || 'penyetuju tahap 1')}.</div>`}
+  ${warn.length ? `<div class="pv-alert pv-warn"><b>Catatan</b><ul>${warn.map(e => `<li>${esc(e.msg)}</li>`).join('')}</ul></div>` : ''}
+
+  <section class="pv-sec"><h4>A. Data Debitur</h4><div class="pv-grid">
+    ${kv('Nama lengkap', esc(d.nama || '-'))}${kv('NIK', esc(d.nik || '-'))}
+    ${kv('Jenis permohonan', esc(d.jenis_permohonan || '-'))}${kv('Skema pembayaran', esc(d.skema || '-'))}
+    ${kv('Jenis calon debitur', esc(d.jenis_debitur || '-'))}${kv('Pekerjaan', esc(d.pekerjaan || '-'))}
+    ${kv('Telepon', esc(d.telp || '-'))}${kv('Sektor ekonomi (KBLI)', esc(sektorNama(ctx, d.sektor)))}
+    ${kv('Alamat', esc(alamat))}${kv('Tujuan pinjaman', esc(d.tujuan || '-'))}
+  </div></section>
+
+  <section class="pv-sec"><h4>B. Usulan Pinjaman & Kapasitas Bayar</h4><div class="pv-grid">
+    ${kv('Usulan plafon', rp(d.plafon))}${kv('Jangka waktu', (d.tenor || 0) + ' bulan')}
+    ${kv('Suku bunga flat', (d.bunga || 0) + '% p.a.')}${kv('Jenis angsuran', esc(d.jenis_angsuran || '-'))}
+    ${kv('Angsuran per bulan', rp(h.renc))}${kv('Bunga efektif (KAB)', h.efektif != null ? h.efektif + '% p.a.' : '-')}
+    ${kv('Total pendapatan', rp(h.pend))}${kv('Total beban', rp(h.beban))}
+    ${kv('Laba bersih', rp(h.laba))}${kv('Angsuran hutang lain', rp(h.angHutang))}
+    ${kv('Sisa penghasilan', rp(h.sisa))}${kv('RPC', h.sisa > 0 ? (h.rpc * 100).toFixed(2) + '%' : 'Tidak dapat dihitung')}
+  </div></section>
+
+  <section class="pv-sec"><h4>C. Agunan</h4>
+    ${(d.agunan || []).length
+      ? `<div class="table-wrap"><table class="table"><thead><tr><th>Jenis</th><th>Nama / uraian</th><th>Bukti</th><th class="num">Taksasi</th><th class="num">Likuidasi</th></tr></thead><tbody>${agunanRows}</tbody></table></div>`
+      : '<p class="muted">Tidak ada agunan.</p>'}
+  </section>
+
+  <section class="pv-sec"><h4>D. Foto & Dokumen</h4>
+    ${fotoGroups(ctx).map(g => `<div class="pv-group"><b>${esc(g.label)}</b>
+      ${g.count ? berkasGrid(ctx, g.bagian, true) : '<span class="muted">Belum ada berkas.</span>'}</div>`).join('')}
+  </section>
+
+  <section class="pv-sec"><h4>E. Penilaian Kertas Kerja 5C</h4>
+    <div class="table-wrap"><table class="table"><thead><tr><th>Indikator</th><th class="c">Bobot</th><th>Pilihan</th><th class="c">Skor</th><th class="c">Kontribusi</th></tr></thead>
+    <tbody>${rows5}</tbody></table></div>
+  </section>
+
+  <section class="pv-sec pv-hasil">
+    <div><small>Nilai total</small><b>${Number(h.total).toFixed(2)}</b><small>dari 5,00</small></div>
+    <div>${chipPred(h.predikat)}</div>
+  </section>`;
+}
+
+// ---------- Panel kanan (langkah 1-3) ----------
 function renderPreview(ctx, r) {
   const el = $('#preview');
   if (!el) return;
   const h = r.hasil;
+
   if (ctx.step === 1) {
+    const cov = ctx.draft.plafon ? ((r.agunan || []).reduce((s, a) => s + num(a.likuidasi), 0) / num(ctx.draft.plafon) * 100) : 0;
     const rows = (r.agunan || []).map(a => `<tr><td>${esc(a.jenis)}</td><td class="num">${rp(a.likuidasi)}</td></tr>`).join('');
-    const cov = h && ctx.draft.plafon ? ((r.agunan || []).reduce((s, a) => s + num(a.likuidasi), 0) / num(ctx.draft.plafon) * 100) : 0;
     el.innerHTML = `<h4>Agunan & Likuidasi</h4>
       ${rows ? `<table class="table"><tbody>${rows}</tbody></table>
         <p class="hint">Coverage likuidasi terhadap plafon: <b>${cov.toFixed(1)}%</b></p>`
         : '<p class="muted">Belum ada agunan.</p>'}
-      <p class="hint">Nilai likuidasi dihitung server sesuai persentase di Parameter.</p>`;
+      <h4>Foto & Dokumen</h4>
+      ${fotoGroups(ctx).map(g => `<div class="pv-group"><small class="muted">${esc(g.label)}${g.count ? ' · ' + g.count + ' berkas' : ': belum ada'}</small>
+        ${g.count ? berkasGrid(ctx, g.bagian, true) : ''}</div>`).join('')}`;
   } else if (ctx.step === 2) {
     el.innerHTML = `<h4>Kapasitas Bayar</h4>
       <dl class="kv">
@@ -697,29 +915,29 @@ function renderPreview(ctx, r) {
              ${h.rpc > 0.8 ? '<span>Di atas 80%: perlu tinjauan struktur kredit.</span>' : ''}</div>`
         : '<div class="rpc rpc-bad"><small>RPC</small><b>Tidak dapat dihitung</b><span>Sisa penghasilan tidak positif.</span></div>'}
       ${h.efektif != null ? `<p class="hint">Bunga efektif KAB: ${h.efektif}% p.a.</p>` : ''}`;
-    const rpcCell = $('#rpcCell');
-    if (rpcCell) rpcCell.textContent = r.skor_rpc;
   } else {
     el.innerHTML = `<h4>Hasil Penilaian</h4>
       <div class="score">${Number(h.total).toFixed(2)}<small>dari 5.00</small></div>
       <p>${chipPred(h.predikat)}</p>
-      <ul class="checklist">
-        <li class="${Object.keys(ctx.draft.skor || {}).length >= 14 ? 'ok' : ''}">Indikator 5C dinilai</li>
-        <li class="${(ctx.draft.agunan || []).length ? 'ok' : ''}">Agunan dicantumkan</li>
-        <li class="${(ctx.berkas || []).some(b => b.bagian === 'fotoDebitur') ? 'ok' : ''}">Foto identitas diunggah</li>
-      </ul>
+      <table class="table pv-mini"><tbody>${r.detail.map((dt, i) => `
+        <tr><td>${esc(FLAT_IND[i].l)}</td><td class="c">${pctTxt(dt.bobotInd)}</td><td class="num"><b>${dt.skor || '-'}</b></td></tr>`).join('')}
+      </tbody></table>
       <p class="hint">Nilai akhir dihitung ulang di server saat diajukan.</p>`;
-    const rpcCell = $('#rpcCell');
-    if (rpcCell) rpcCell.textContent = r.skor_rpc;
+    const rc = $('#rpcCell');
+    if (rc) rc.textContent = r.skor_rpc;
   }
+  loadThumbs(el);
 }
 
-// ---------- Penanganan event form (delegasi) ----------
+// ---------- Penanganan event ----------
+function edited(ctx) { scheduleSave(ctx); ctx.hitung(); }
+
 function formInput(e, ctx) {
   const el = e.target;
   if (el.dataset.k && el.tagName !== 'SELECT') {
     setPath(ctx.draft, el.dataset.k, parseVal(el));
-    ctx.hitung();
+    markOk(ctx, el);
+    edited(ctx);
   }
 }
 
@@ -727,16 +945,21 @@ async function formChange(e, ctx) {
   const el = e.target;
   if (el.dataset.k && el.tagName === 'SELECT') {
     setPath(ctx.draft, el.dataset.k, el.value);
-    if (/^agunan\.\d+\.jenis$/.test(el.dataset.k)) return renderBody(ctx);
-    ctx.hitung();
+    markOk(ctx, el);
+    if (/^agunan\.\d+\.jenis$/.test(el.dataset.k)) { scheduleSave(ctx); return renderBody(ctx); }
+    return edited(ctx);
   }
   if (el.dataset.skor) {
     ctx.draft.skor[el.dataset.skor] = Number(el.value) || 0;
+    markOk(ctx, el);
     const row = el.closest('tr');
     if (row) row.querySelector('td.num b').textContent = el.value || '-';
-    ctx.hitung();
+    return edited(ctx);
   }
-  if (el.dataset.k && (el.dataset.n === 'm')) el.value = fmtMoney(getPath(ctx.draft, el.dataset.k));
+  if (el.dataset.k && el.dataset.n === 'm') {
+    el.value = fmtMoney(getPath(ctx.draft, el.dataset.k));
+    scheduleSave(ctx);
+  }
   if (el.dataset.upload) return uploadFiles(ctx, el);
 }
 
@@ -746,57 +969,150 @@ async function formClick(e, ctx) {
   if (t.dataset.go) return goStep(ctx, Number(t.dataset.go));
   switch (t.dataset.act) {
     case 'save': return saveDraft(ctx, true);
+    case 'next': return nextStep(ctx);
     case 'submit': return submitForm(ctx);
-    case 'addRelasi': ctx.draft.relasi.push({ relasi: 'Istri / Suami' }); return renderBody(ctx);
-    case 'delRelasi': ctx.draft.relasi.splice(Number(t.dataset.i), 1); return renderBody(ctx);
-    case 'addAgunan': ctx.draft.agunan.push({ jenis: JENIS_AGUNAN[0] }); return renderBody(ctx);
-    case 'delAgunan': ctx.draft.agunan.splice(Number(t.dataset.i), 1); return renderBody(ctx);
+    case 'addRelasi': ctx.draft.relasi.push({ relasi: 'Istri / Suami' }); edited(ctx); return renderBody(ctx);
+    case 'delRelasi': ctx.draft.relasi.splice(Number(t.dataset.i), 1); edited(ctx); return renderBody(ctx);
+    case 'addAgunan': ctx.draft.agunan.push({ jenis: JENIS_AGUNAN[0] }); edited(ctx); return renderBody(ctx);
+    case 'delAgunan': ctx.draft.agunan.splice(Number(t.dataset.i), 1); edited(ctx); return renderBody(ctx);
     case 'delBerkas': return deleteBerkas(ctx, t.dataset.id);
   }
 }
 
-// Simpan draft ke server; setelah itu URL memuat id agar refresh tidak kehilangan data
+// ---------- Simpan (autosave + manual, berurutan) ----------
 async function saveDraft(ctx, notify = false) {
-  const r = await Api.call('save', { id: ctx.id, form: ctx.draft });
-  if (!r.ok) { Toast.show(r.msg || 'Gagal menyimpan.', 'error'); return false; }
-  ctx.id = r.id;
   const st = $('#saveState');
-  if (st) st.textContent = 'Tersimpan ' + new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  if (st) st.textContent = 'Menyimpan…';
+  let r;
+  try { r = await Api.call('save', { id: ctx.id, form: ctx.draft }); }
+  catch (e) { r = { ok: false, msg: 'Gagal menyimpan.' }; }
+  if (!r.ok) {
+    if (st) st.textContent = 'Belum tersimpan';
+    Toast.show(r.msg || 'Gagal menyimpan.', 'error');
+    return false;
+  }
+  ctx.id = r.id;
+  const st2 = $('#saveState');
+  if (st2) st2.textContent = 'Tersimpan ' + new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
   if (notify) Toast.show('Draft tersimpan.', 'ok');
   return true;
 }
 
+function queueSave(ctx, notify = false) {
+  ctx.saveQ = ctx.saveQ.then(() => saveDraft(ctx, notify));
+  return ctx.saveQ;
+}
+
+// Simpan otomatis 1,5 detik setelah pengguna berhenti mengetik
+function scheduleSave(ctx) {
+  clearTimeout(ctx.timer);
+  ctx.timer = setTimeout(() => queueSave(ctx, false), 1500);
+}
+
+// Pindah langkah langsung (tanpa menunggu server); simpan dijalankan di latar belakang
 async function goStep(ctx, n) {
-  if (!(await saveDraft(ctx))) return;
+  if (!ctx.id && !(await queueSave(ctx, false))) return;
+  if (ctx.id) { clearTimeout(ctx.timer); queueSave(ctx, false); }
   ctx.step = n;
   history.replaceState(null, '', `#/permohonan/${ctx.id}/edit/${n}`);
   renderForm(ctx);
 }
 
+// Tombol "Lanjut": periksa langkah ini dulu
+async function nextStep(ctx) {
+  const errs = cekStep(ctx, ctx.step);
+  const hard = errs.filter(e => e.sev === 'error');
+  const warn = errs.filter(e => e.sev === 'warn');
+
+  if (hard.length) {
+    ctx.invalid = new Set();
+    markInvalid(ctx, hard);
+    const pilih = await Dialog.show({
+      tone: 'error',
+      title: `Lengkapi ${hard.length} data pada langkah ini`,
+      items: hard.map(e => e.msg),
+      actions: [
+        { label: 'Lengkapi dulu', key: 'close', cls: 'btn-primary' },
+        { label: 'Lanjut tanpa melengkapi', key: 'skip', cls: 'btn-secondary' },
+      ],
+    });
+    if (pilih !== 'skip') return;
+  } else if (warn.length) {
+    Toast.show('Catatan: ' + warn[0].msg + '.', 'info');
+  }
+  return goStep(ctx, ctx.step + 1);
+}
+
+// Pengajuan: periksa semua langkah, tampilkan daftar kekurangan di tengah layar
 async function submitForm(ctx) {
-  if (!(await saveDraft(ctx))) return;
+  const errs = cekSemua(ctx);
+  const hard = errs.filter(e => e.sev === 'error');
+  const warn = errs.filter(e => e.sev === 'warn');
+
+  if (hard.length) {
+    const langkah = [...new Set(hard.map(e => e.step))];
+    const pilih = await Dialog.show({
+      tone: 'error',
+      title: `Ada ${hard.length} data yang belum lengkap`,
+      items: hard.map(e => `Langkah ${e.step}: ${e.msg}`),
+      actions: [
+        { label: 'Tutup', key: 'close', cls: 'btn-secondary' },
+        ...langkah.map(s => ({ label: `Buka Langkah ${s}`, key: 's' + s, cls: 'btn-primary' })),
+      ],
+    });
+    if (pilih && pilih.startsWith('s')) {
+      const s = Number(pilih.slice(1));
+      ctx.invalid = new Set(hard.filter(e => e.step === s).map(e => e.k).filter(Boolean));
+      return goStep(ctx, s);
+    }
+    return;
+  }
+
+  const pilih = await Dialog.show({
+    tone: warn.length ? 'warn' : 'ok',
+    title: `Ajukan permohonan ke ${ctx.penyetuju || 'penyetuju tahap 1'}?`,
+    items: warn.length
+      ? ['Catatan (tidak menghalangi pengajuan):', ...warn.map(w => w.msg)]
+      : ['Setelah diajukan, data tidak dapat diubah sampai dikembalikan.'],
+    actions: [
+      { label: 'Batal', key: 'close', cls: 'btn-secondary' },
+      { label: 'Ya, ajukan', key: 'ok', cls: 'btn-primary' },
+    ],
+  });
+  if (pilih !== 'ok') return;
+
+  clearTimeout(ctx.timer);
+  if (!(await queueSave(ctx, false))) return;
   const r = await Api.call('submit', { id: ctx.id });
-  if (!r.ok) return Toast.show(r.msg, 'error');
+  if (!r.ok) {
+    return Dialog.show({ tone: 'error', title: 'Pengajuan belum dapat diproses', items: [r.msg],
+      actions: [{ label: 'Mengerti', key: 'close', cls: 'btn-primary' }] });
+  }
   Toast.show('Permohonan diajukan. SPPK: ' + r.sppk, 'ok');
   location.hash = '#/permohonan/' + ctx.id;
 }
 
+// ---------- Berkas ----------
 async function uploadFiles(ctx, input) {
   const bagian = input.dataset.upload;
   const files = Array.from(input.files || []);
   input.value = '';
   if (!files.length) return;
-  if (!ctx.id) {
-    if (!(await saveDraft(ctx))) return;
-  }
-  for (const f of files) {
+  if (!ctx.id && !(await queueSave(ctx, false))) return;
+
+  const hasil = await Promise.all(files.map(async f => {
     try {
       const p = await fileToPayload(f);
       const r = await Api.call('upload', Object.assign({ id: ctx.id, bagian }, p));
-      if (!r.ok) Toast.show(r.msg, 'error');
+      return r.ok ? null : r.msg;
     } catch (err) {
-      Toast.show(err.message, 'error');
+      return err.message;
     }
+  }));
+  const gagal = hasil.filter(Boolean);
+  if (gagal.length) {
+    await Dialog.show({ tone: 'error', title: 'Sebagian berkas belum terunggah', items: gagal,
+      actions: [{ label: 'Mengerti', key: 'close', cls: 'btn-primary' }] });
   }
   const g = await Api.call('get', { id: ctx.id });
   if (g.ok) ctx.berkas = g.berkas || [];
@@ -806,12 +1122,14 @@ async function uploadFiles(ctx, input) {
 async function deleteBerkas(ctx, idBerkas) {
   if (!confirm('Hapus berkas ini dari permohonan? Berkas tetap tersimpan di Drive untuk jejak audit.')) return;
   const r = await Api.call('deleteFile', { id_berkas: idBerkas });
-  if (!r.ok) return Toast.show(r.msg, 'error');
+  if (!r.ok) {
+    return Dialog.show({ tone: 'error', title: 'Berkas belum dapat dihapus', items: [r.msg],
+      actions: [{ label: 'Mengerti', key: 'close', cls: 'btn-primary' }] });
+  }
   const g = await Api.call('get', { id: ctx.id });
   if (g.ok) ctx.berkas = g.berkas || [];
   renderBody(ctx);
 }
-
 
 // ============================================================
 // PRATINJAU & MEMO
@@ -1038,7 +1356,7 @@ Pages.adminPar = async () => {
       <div class="grid-3">${kantor.map(k => `
         <label class="fld"><span>${esc(k)}</span>
           <select class="input" data-k="${esc(k)}" data-t="str">
-            <option value="MANAJER_OPS" ${(P.penyetuju_tahap1 || {})[k] === 'MANAJER_OPS' ? 'selected' : ''}>Manajer Operasional</option>
+            <option value="MANAJER_OPS" ${(P.penyetuju_tahap1 || {})[k] === 'MANAJER_OPS' ? 'selected' : ''}>Manajer Marketing</option>
             <option value="PIMPINAN_CABANG" ${(P.penyetuju_tahap1 || {})[k] === 'PIMPINAN_CABANG' ? 'selected' : ''}>Pimpinan Cabang</option>
           </select></label>`).join('')}</div>
       <div class="actions end"><button class="btn-primary" data-save="penyetuju_tahap1">Simpan bagian ini</button></div>
@@ -1217,14 +1535,20 @@ Pages.adminTampilan = async () => {
   if (!r.ok) return App.error(r.msg);
   const T = r.tampilan || {};
   const fitur = (T.fitur || '').split('|');
+  let bgShown = r.bg || '';
   let bgBaru = null, hapusBg = false;
 
   $('#main').innerHTML = `
     <div class="page-head"><div>
       <h2>Tampilan Login</h2>
-      <p class="muted">Gambar dan teks pada halaman depan login. Perubahan berlaku setelah disimpan dan halaman login dimuat ulang.</p>
+      <p class="muted">Pratinjau di bawah menunjukkan tampilan halaman login. Perubahan teks langsung terlihat.</p>
     </div></div>
-    <div class="dash-grid">
+    <section class="card">
+      <h3>Pratinjau Halaman Login</h3>
+      <div class="lp-box" id="lpBox"></div>
+      <p class="hint">Ukuran gambar yang disarankan 1920 × 1080 px. Gambar dikecilkan otomatis saat diunggah.</p>
+    </section>
+    <div class="dash-grid" style="margin-top:16px">
       <section class="card">
         <h3>Teks</h3>
         <form id="fTeks" class="grid-2">
@@ -1236,17 +1560,14 @@ Pages.adminTampilan = async () => {
           ${fld('Deskripsi', `<textarea class="input" rows="3" name="deskripsi">${esc(T.deskripsi || '')}</textarea>`, { wide: true })}
           ${[0, 1, 2].map(i => fld('Poin fitur ' + (i + 1),
             `<input class="input" data-fitur="${i}" value="${esc(fitur[i] || '')}">`)).join('')}
-          ${fld('Transparansi lapisan gelap (0–95%)',
-            `<input class="input" type="number" min="0" max="95" name="overlay_persen" value="${esc(T.overlay_persen || 85)}">`)}
+          ${fld('Lapisan warna gelap (0 = tanpa warna, maks. 95%)',
+            `<input class="input" type="number" min="0" max="95" name="overlay_persen" value="${esc(T.overlay_persen ?? 0)}">`)}
           <div class="actions end" style="grid-column:1/-1"><button class="btn-primary" type="submit">Simpan Teks</button></div>
         </form>
       </section>
       <section class="card">
         <h3>Gambar Latar</h3>
-        <p class="hint">JPG, PNG, atau WEBP, maks. 2 MB. Disarankan lebar minimal 1600 px.</p>
-        <div class="login-preview" id="bgPrev">${r.bg
-          ? `<img src="${r.bg}" alt="Pratinjau latar login">`
-          : '<span class="muted">Belum ada gambar (memakai warna navy)</span>'}</div>
+        <p class="hint">JPG, PNG, atau WEBP. Setiap kali gambar baru disimpan, lapisan warna gelap otomatis dikembalikan ke 0% (tanpa warna biru).</p>
         <div class="actions" style="margin-top:12px">
           <label class="btn-secondary upload"><input type="file" id="bgFile" accept="image/jpeg,image/png,image/webp" hidden>Pilih gambar</label>
           <button class="btn-secondary" id="bgHapus">Hapus gambar</button>
@@ -1255,39 +1576,83 @@ Pages.adminTampilan = async () => {
       </section>
     </div>`;
 
-  const kirim = async body => {
+  const pesan = (title, items) => Dialog.show({ tone: 'error', title, items,
+    actions: [{ label: 'Mengerti', key: 'close', cls: 'btn-primary' }] });
+
+  // Pratinjau: meniru susunan halaman login (gambar, lapisan, teks, dan kartu)
+  const lihat = () => {
+    const f = $('#fTeks');
+    const v = n => f.querySelector(`[name=${n}]`).value;
+    const ov = Math.min(95, Math.max(0, Number(v('overlay_persen')) || 0));
+    const fit = $$('[data-fitur]', f).map(x => x.value.trim()).filter(Boolean);
+    $('#lpBox').innerHTML = `
+      ${bgShown ? `<div class="lb-img" style="background-image:url('${bgShown}')"></div>` : '<div class="lp-plain"></div>'}
+      ${ov > 0 ? `<div class="lb-ov" style="background:rgba(11,27,63,${ov / 100})"></div>` : ''}
+      <div class="lp-txt">
+        <div class="lp-brand"><span class="lp-mark">K</span>${esc(App.brand)}</div>
+        <h3>${esc(v('judul_utama')).replace(/\n/g, '<br>')}</h3>
+        <h5>${esc(v('judul_produk'))}</h5>
+        <p>${esc(v('deskripsi'))}</p>
+        <ul>${fit.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+      </div>
+      <div class="lp-card"><b>${esc(v('judul_kartu'))}</b><small>${esc(v('subjudul_kartu'))}</small>
+        <i></i><i></i><span></span></div>`;
+  };
+  lihat();
+  $('#fTeks').oninput = lihat;
+
+  const kirim = async (body, sukses) => {
     const x = await Api.call('stampilan', body);
-    if (!x.ok) return Toast.show(x.msg, 'error');
-    Toast.show('Tampilan login tersimpan.', 'ok');
+    if (!x.ok) return pesan('Belum dapat disimpan', [x.msg]);
+    await App.refreshBrand(false);
+    Toast.show(sukses, 'ok');
+    return true;
   };
 
-  $('#fTeks').onsubmit = e => {
+  $('#fTeks').onsubmit = async e => {
     e.preventDefault();
     const f = e.target;
     const nilai = {};
     ['judul_utama', 'judul_produk', 'judul_kartu', 'subjudul_kartu', 'deskripsi', 'overlay_persen']
       .forEach(k => { nilai[k] = f.querySelector(`[name=${k}]`).value.trim(); });
     nilai.fitur = $$('[data-fitur]', f).map(x => x.value.trim()).filter(Boolean).join('|');
-    kirim({ nilai });
+    kirim({ nilai }, 'Teks login tersimpan.');
   };
 
   $('#bgFile').onchange = async e => {
     const f = e.target.files[0];
     if (!f) return;
-    if (f.size > 2 * 1024 * 1024) return Toast.show('Ukuran gambar maksimal 2 MB.', 'error');
-    bgBaru = await fileBase64(f);
+    try {
+      const hasil = await compressImage(f, 1920, 0.85);
+      if (hasil.data.length * 0.75 > 2 * 1024 * 1024) {
+        bgBaru = null;
+        return pesan('Gambar terlalu besar', ['Setelah dikecilkan, gambar masih lebih dari 2 MB. Pilih gambar dengan resolusi lebih kecil.']);
+      }
+      bgBaru = hasil;
+    } catch (err) {
+      bgBaru = null;
+      return pesan('Gambar tidak dapat dibaca', [err.message]);
+    }
     hapusBg = false;
-    $('#bgPrev').innerHTML = `<img src="data:${bgBaru.mime};base64,${bgBaru.data}" alt="Pratinjau latar login">`;
+    bgShown = `data:${bgBaru.mime};base64,${bgBaru.data}`;
+    lihat();
   };
 
   $('#bgHapus').onclick = () => {
-    hapusBg = true; bgBaru = null;
-    $('#bgPrev').innerHTML = '<span class="muted">Gambar akan dihapus saat disimpan</span>';
+    hapusBg = true; bgBaru = null; bgShown = '';
+    lihat();
   };
 
-  $('#bgSimpan').onclick = () => {
-    if (!bgBaru && !hapusBg) return Toast.show('Pilih gambar atau tekan Hapus gambar.', 'error');
-    kirim(hapusBg ? { hapus_bg: true } : { bg_base64: bgBaru.data, bg_mime: bgBaru.mime });
+  $('#bgSimpan').onclick = async () => {
+    if (!bgBaru && !hapusBg) return pesan('Belum ada gambar', ['Pilih gambar terlebih dahulu, atau tekan Hapus gambar.']);
+    const body = hapusBg ? { hapus_bg: true } : { bg_base64: bgBaru.data, bg_mime: bgBaru.mime };
+    const ok = await kirim(body, 'Gambar latar tersimpan. Klik Keluar lalu lihat halaman login.');
+    if (ok) {
+      bgShown = App.bg || '';
+      if (!hapusBg) $('#fTeks').querySelector('[name=overlay_persen]').value = 0;
+      lihat();
+    }
+    bgBaru = null; hapusBg = false;
   };
 };
 

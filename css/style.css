@@ -312,3 +312,112 @@ h4 { font-size: 14px; margin: 12px 0 8px; }
   display: grid; place-items: center; overflow: hidden; background: #F4F7FB;
 }
 .login-preview img { width: 100%; height: auto; display: block; }
+
+/* ===================== v3 ===================== */
+
+/* Bilah loading tipis di atas layar */
+#gbar{position:fixed;top:0;left:0;height:3px;width:100%;transform:scaleX(0);transform-origin:left;
+  background:linear-gradient(90deg,#3B6BF0,#7C3AED,#F59E0B);z-index:1000;opacity:0;pointer-events:none;
+  transition:transform .25s ease,opacity .25s ease}
+#gbar.on{opacity:1;transform:scaleX(.85);transition:transform 1.4s cubic-bezier(.1,.6,.2,1),opacity .15s}
+
+/* Dialog di tengah layar */
+.overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  background:rgba(11,27,63,.45);z-index:200;padding:16px;animation:fadeIn .15s ease-out}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.modal.dlg{max-width:520px;width:100%;text-align:center;padding:26px 24px 22px;border-radius:18px;
+  animation:popIn .2s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes popIn{from{transform:scale(.94);opacity:0}to{transform:none;opacity:1}}
+.dlg-ic{width:56px;height:56px;margin:0 auto 10px;border-radius:50%;display:grid;place-items:center;
+  font-size:28px;font-weight:800;color:#fff;background:#EF4444}
+.dlg-warn .dlg-ic{background:#F59E0B}
+.dlg-ok .dlg-ic{background:#16A34A}
+.dlg-info .dlg-ic{background:#2F6BFF}
+.dlg-title{font-size:20px;margin:0 0 10px}
+.dlg-list{list-style:none;padding:0;margin:0 0 16px;text-align:left;max-height:40vh;overflow:auto;display:grid;gap:6px}
+.dlg-list li{background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:9px 12px;font-size:15px;line-height:1.45}
+.dlg-warn .dlg-list li{background:#FFFBEB;border-color:#FDE68A}
+.dlg-ok .dlg-list li{background:#F0FDF4;border-color:#BBF7D0}
+.dlg-info .dlg-list li{background:#EFF6FF;border-color:#BFDBFE}
+.dlg-act{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.dlg-act button{font-size:15px;padding:11px 18px}
+
+/* Field yang belum diisi / salah */
+.is-invalid{border-color:#EF4444 !important;box-shadow:0 0 0 3px rgba(239,68,68,.18) !important;background:#FFF7F7 !important}
+
+/* Tombol umum yang lebih besar */
+.btn-lg{font-size:16px;padding:12px 22px}
+.btn-review{font-size:18px;font-weight:700;padding:13px 24px;border-radius:12px}
+
+/* Pesan di pratinjau */
+.form-layout.one{display:block}
+.pv-alert{border-radius:14px;padding:14px 18px;margin-bottom:14px;border:1px solid}
+.pv-alert ul{margin:8px 0 0;padding-left:20px}
+.pv-alert li{margin:4px 0}
+.pv-err{background:#FEF2F2;border-color:#FCA5A5;color:#7F1D1D}
+.pv-warn{background:#FFFBEB;border-color:#FCD34D;color:#78350F}
+.pv-ok{background:#F0FDF4;border-color:#86EFAC;color:#14532D}
+.pv-step{display:inline-block;background:#fff;border-radius:6px;padding:1px 8px;font-size:12px;font-weight:700;margin-right:6px;border:1px solid currentColor}
+.pv-jump{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+
+/* Pratinjau akhir */
+.pv-sec{background:#fff;border:1px solid #E5EAF3;border-radius:16px;padding:16px 18px;margin-bottom:14px}
+.pv-sec h4{margin:0 0 10px;font-size:16px}
+.pv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px 18px}
+.pv-kv small{display:block;color:#64748B;font-size:12px}
+.pv-kv b{font-size:15px;word-break:break-word}
+.pv-group{margin-bottom:12px}
+.pv-group > b,.pv-group > small{display:block;margin-bottom:6px}
+.pv-mini td{padding:5px 6px;font-size:12.5px}
+.pv-hasil{display:flex;align-items:center;gap:24px;background:linear-gradient(135deg,#EEF4FF,#F5F3FF)}
+.pv-hasil b{font-size:34px;display:block;line-height:1}
+.pv-hasil small{display:block;color:#64748B}
+
+/* Layer gambar latar login (dipisah dari teks agar selalu terlihat) */
+.auth-brand{position:relative;isolation:isolate;overflow:hidden}
+.lb-img,.lb-ov{position:absolute;inset:0;pointer-events:none}
+.lb-img{background-size:cover;background-position:center;z-index:-2}
+.lb-ov{z-index:-1}
+.auth-brand > :not(.lb-img):not(.lb-ov){position:relative;z-index:1}
+
+/* Kursor lebah */
+#bee{position:fixed;left:0;top:0;width:36px;height:36px;pointer-events:none;z-index:9999;
+  filter:drop-shadow(0 2px 2px rgba(0,0,0,.25));will-change:transform}
+#bee svg{width:100%;height:100%;overflow:visible}
+#bee .wing{transform-box:fill-box;transform-origin:center bottom;animation:flap .09s ease-in-out infinite alternate}
+#bee .wr{animation-delay:-.045s}
+@keyframes flap{from{transform:scaleY(1)}to{transform:scaleY(.3)}}
+@media (pointer:coarse){#bee{display:none}}
+
+/* ===================== v3b ===================== */
+
+/* Login: kartu form dibuat kecil agar gambar latar lebih lebar */
+.auth-split{display:grid !important;grid-template-columns:minmax(0,1fr) 340px !important;min-height:100vh}
+.auth-brand{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:48px 56px !important}
+.auth-brand h1{font-size:clamp(28px,3.4vw,46px)}
+.auth-card-wrap{background:#F4F7FB;display:flex;align-items:center;justify-content:center;padding:24px !important}
+.auth-card{width:100%;max-width:300px;padding:22px !important;box-shadow:0 8px 24px rgba(11,27,63,.12) !important}
+@media (max-width:820px){
+  .auth-split{grid-template-columns:1fr !important}
+  .auth-brand{min-height:42vh;padding:28px !important}
+  .auth-card-wrap{padding:20px !important}
+}
+
+/* Pratinjau halaman login di admin */
+.lp-box{position:relative;isolation:isolate;overflow:hidden;border-radius:14px;aspect-ratio:16/9;
+  background:#0B1B3F;color:#fff;display:grid;grid-template-columns:minmax(0,1fr) 30%;margin-bottom:6px}
+.lp-box .lb-img,.lp-box .lb-ov{position:absolute;inset:0}
+.lp-plain{position:absolute;inset:0;background:linear-gradient(135deg,#0B1B3F,#1E3A8A)}
+.lp-txt{position:relative;z-index:1;padding:4% 5%;align-self:center}
+.lp-txt h3{font-size:clamp(14px,2.2vw,26px);margin:6px 0 4px;line-height:1.2;color:#fff}
+.lp-txt h5{margin:0 0 6px;font-size:12px;opacity:.9}
+.lp-txt p{font-size:11px;opacity:.85;margin:0 0 6px}
+.lp-txt ul{margin:0;padding-left:14px;font-size:10px}
+.lp-brand{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700}
+.lp-mark{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:#3B6BF0;font-size:10px}
+.lp-card{position:relative;z-index:1;align-self:center;margin-right:5%;background:#fff;color:#0B1B3F;
+  border-radius:10px;padding:10px;font-size:10px;box-shadow:0 6px 16px rgba(0,0,0,.25)}
+.lp-card b{display:block;font-size:12px}
+.lp-card small{display:block;opacity:.7;margin:2px 0 8px}
+.lp-card i{display:block;height:6px;border-radius:3px;background:#E5EAF3;margin:5px 0}
+.lp-card span{display:block;height:16px;border-radius:6px;background:#3B6BF0;margin-top:8px}

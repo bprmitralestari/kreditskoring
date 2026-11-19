@@ -1,5 +1,6 @@
 // ============================================================
 // ROUTER, SHELL, DAN INISIALISASI APLIKASI
+// Shell (sidebar & topbar) dibuat sekali; perpindahan menu hanya mengganti konten.
 // Routing berbasis hash: #/dashboard, #/permohonan/ID/edit/1, dst.
 // ============================================================
 const MENU = {
@@ -19,8 +20,8 @@ const MENU = {
     ['users', 'Pengguna', '#/admin/users', 'users'],
     ['par', 'Parameter', '#/admin/parameter', 'par'],
     ['kop', 'Kop Surat', '#/admin/kop', 'kop'],
-    ['tampilan', 'Tampilan Login', '#/admin/tampilan', 'login'],
     ['sektor', 'Sektor Ekonomi', '#/admin/sektor', 'sektor'],
+    ['tampilan', 'Tampilan Login', '#/admin/tampilan', 'login'],
     ['log', 'Log Akses', '#/admin/log', 'log'],
     ['akun', 'Akun Saya', '#/akun', 'akun'],
   ],
@@ -40,25 +41,46 @@ const ICON = {
   login: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 15l5-4 4 3 3-2 6 5"/>',
 };
 
+// Data yang diambil lebih dulu saat kursor berada di atas menu (agar halaman langsung tampil)
+const PREF = {
+  dashboard: () => Api.call('dashboard'),
+  daftar: () => Api.call('list', {}),
+  persetujuan: () => Api.call('list', {}),
+  par: () => Api.call('par'),
+  kop: () => Api.call('kop'),
+  users: () => Api.call('users'),
+  sektor: () => Api.call('sektorAll'),
+  log: () => Api.call('logList'),
+  tampilan: () => Api.call('tampilan'),
+};
+
 const App = {
   brand: 'BPR Mitra Lestari',
   cache: {},
   tampilan: {},
   bg: '',
+  _who: '',
 
-  // Inisialisasi: ambil nama bank untuk halaman login, lalu jalankan router
-  async init() {
-    try {
-      const b = await Api.call('loginbg');
-      if (b && b.ok) {
-        App.brand = b.brand || App.brand;
-        App.tampilan = b.tampilan || {};
-        App.bg = b.bg || '';
-      }
-    } catch (e) { /* tetap pakai nama bawaan */ }
+  init() {
     window.addEventListener('hashchange', () => App.route());
     if (!location.hash) location.hash = '#/login';
     App.route();
+    // Teks dan gambar login diambil di latar belakang; halaman login digambar ulang bila perlu
+    App.refreshBrand(true);
+  },
+
+  // Ambil nama bank, teks, dan gambar halaman login dari server
+  async refreshBrand(ulangLogin = false) {
+    const b = await Api.call('loginbg').catch(() => null);
+    if (b && b.ok) {
+      App.brand = b.brand || App.brand;
+      App.tampilan = b.tampilan || {};
+      App.bg = b.bg || '';
+      const el = document.querySelector('.brand b');
+      if (el) el.textContent = App.brand;
+    }
+    if (ulangLogin && !Session.get() && (location.hash || '').startsWith('#/login')) Pages.login();
+    return b;
   },
 
   menuFor(role) {
@@ -67,11 +89,10 @@ const App = {
     return MENU.APPROVER;
   },
 
-  // Kerangka halaman: sidebar + topbar + area konten
-  shell(key, title) {
-    const u = Session.get().user;
+  // Kerangka utama (sidebar + topbar). Hanya dibuat ulang saat pengguna berganti.
+  buildShell(u) {
     const items = App.menuFor(u.role).map(([k, label, href, ic]) => `
-      <a class="nav-item ${k === key ? 'is-active' : ''}" href="${href}">
+      <a class="nav-item" data-key="${k}" href="${href}">
         ${svg(ICON[ic])}<span class="label">${esc(label)}</span>
         ${k === 'persetujuan' ? '<em class="nav-badge" data-pend hidden></em>' : ''}
       </a>`).join('');
@@ -83,19 +104,35 @@ const App = {
             <div class="brand-mark">K</div>
             <div><b>${esc(App.brand)}</b><small>${esc(APP_NAME)}</small></div>
           </div>
-          <nav class="nav">${items}</nav>
+          <nav class="nav" id="nav">${items}</nav>
           <div class="side-foot">
             <div class="who"><b>${esc(u.nama)}</b><small>${esc(u.jabatan)} · ${esc(u.kantor)}</small></div>
+            <button class="btn-ghost-dark" id="btnPw">Ubah Password</button>
             <button class="btn-ghost-dark" id="btnLogout">Keluar</button>
           </div>
         </aside>
         <div class="content">
-          <header class="topbar"><h1>${esc(title)}</h1></header>
-          <main id="main" class="main"><div class="skeleton"></div></main>
+          <header class="topbar"><h1 id="pgTitle"></h1></header>
+          <main id="main" class="main"></main>
         </div>
       </div>`;
+
     $('#btnLogout').onclick = () => App.logout();
-    App.refreshPending();
+    $('#btnPw').onclick = () => App.openPassword();
+    $('#nav').onmouseover = e => {
+      const a = e.target.closest('.nav-item');
+      if (!a || a.dataset.pf) return;
+      a.dataset.pf = '1';
+      const f = PREF[a.dataset.key];
+      if (f) f().catch(() => {});
+    };
+
+    // Data dasar dimuat di latar belakang setelah login
+    if (u.role === 'AO') Api.call('sektor').catch(() => {});
+    if (u.role !== 'ADMIN') {
+      Api.call('dashboard').catch(() => {});
+      Api.call('list', {}).catch(() => {});
+    }
   },
 
   // Halaman dengan kerangka; error ditangkap agar aplikasi tidak macet
@@ -103,6 +140,19 @@ const App = {
     App.shell(key, title);
     try { await fn(); }
     catch (e) { console.error(e); App.error('Terjadi kesalahan saat memuat halaman. Coba muat ulang.'); }
+  },
+
+  shell(key, title) {
+    const u = Session.get().user;
+    const who = u.username + '|' + u.role;
+    if (!$('.shell') || App._who !== who) {
+      App.buildShell(u);
+      App._who = who;
+    }
+    $$('.nav-item').forEach(a => a.classList.toggle('is-active', a.dataset.key === key));
+    $('#pgTitle').textContent = title;
+    $('#main').innerHTML = '<div class="skeleton"></div>';
+    App.refreshPending();
   },
 
   error(msg) {
@@ -122,10 +172,30 @@ const App = {
     if (el) { el.textContent = n; el.hidden = !n; }
   },
 
-  async logout() {
-    await Api.call('logout');
+  // Ubah password: tersedia untuk semua peran
+  openPassword() {
+    const m = modal(`
+      <h3>Ubah Password</h3>
+      <p class="muted">Password baru minimal 6 karakter dan harus berbeda dari password lama.</p>
+      <form id="fPwModal">
+        <label class="fld"><span>Password saat ini</span><input class="input" type="password" name="o" autocomplete="current-password" required></label>
+        <label class="fld"><span>Password baru <small class="hint">minimal 6 karakter</small></span><input class="input" type="password" name="n" autocomplete="new-password" required></label>
+        <label class="fld"><span>Ulangi password baru</span><input class="input" type="password" name="c" autocomplete="new-password" required></label>
+        <div class="actions end">
+          <button type="button" class="btn-secondary" id="pwBatal">Batal</button>
+          <button class="btn-primary" type="submit">Simpan Password</button>
+        </div>
+      </form>`);
+    m.el.querySelector('#pwBatal').onclick = m.close;
+    pwForm(m.el.querySelector('#fPwModal'), () => m.close());
+  },
+
+  logout() {
+    Api.call('logout').catch(() => {});
     Session.clear();
+    App._who = '';
     location.hash = '#/login';
+    App.refreshBrand(true);
   },
 
   // Router utama
@@ -173,8 +243,8 @@ const App = {
           parameter: ['par', 'Parameter Penilaian', Pages.adminPar],
           kop: ['kop', 'Kop Surat', Pages.adminKop],
           sektor: ['sektor', 'Sektor Ekonomi', Pages.adminSektor],
-          log: ['log', 'Log Akses', Pages.adminLog],
           tampilan: ['tampilan', 'Tampilan Login', Pages.adminTampilan],
+          log: ['log', 'Log Akses', Pages.adminLog],
         };
         const m = map[a] || map.users;
         return App.page(m[0], m[1], m[2]);
