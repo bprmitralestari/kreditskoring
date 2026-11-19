@@ -59,27 +59,39 @@ const App = {
   cache: {},
   tampilan: {},
   bg: '',
+  gaya: {},
   _who: '',
 
   init() {
     window.addEventListener('hashchange', () => App.route());
     if (!location.hash) location.hash = '#/login';
+    // Tampilan login dari cache lokal agar langsung muncul, lalu diperbarui dari server
+    const c = Api.peek('loginbg');
+    if (c && c.ok) App.terapkanBrand(c);
     App.route();
     // Teks dan gambar login diambil di latar belakang; halaman login digambar ulang bila perlu
     App.refreshBrand(true);
   },
 
   // Ambil nama bank, teks, dan gambar halaman login dari server
+  terapkanBrand(b) {
+    App.brand = b.brand || App.brand;
+    App.tampilan = b.tampilan || {};
+    App.bg = b.bg || '';
+    App.gaya = b.gaya || {};
+    const el = document.querySelector('.brand b');
+    if (el) el.textContent = App.brand;
+  },
+
+  // Render ulang halaman login hanya jika isinya benar-benar berubah
   async refreshBrand(ulangLogin = false) {
     const b = await Api.call('loginbg').catch(() => null);
     if (b && b.ok) {
-      App.brand = b.brand || App.brand;
-      App.tampilan = b.tampilan || {};
-      App.bg = b.bg || '';
-      const el = document.querySelector('.brand b');
-      if (el) el.textContent = App.brand;
+      const sebelum = JSON.stringify([App.brand, App.tampilan, App.bg, App.gaya]);
+      App.terapkanBrand(b);
+      const sesudah = JSON.stringify([App.brand, App.tampilan, App.bg, App.gaya]);
+      if (ulangLogin && sebelum !== sesudah && !Session.get() && (location.hash || '').startsWith('#/login')) Pages.login();
     }
-    if (ulangLogin && !Session.get() && (location.hash || '').startsWith('#/login')) Pages.login();
     return b;
   },
 
@@ -106,7 +118,7 @@ const App = {
           </div>
           <nav class="nav" id="nav">${items}</nav>
           <div class="side-foot">
-            <div class="who"><b>${esc(u.nama)}</b><small>${esc(u.jabatan)} · ${esc(u.kantor)}</small></div>
+            <div class="who"><b>${esc(u.nama)}</b><small>${esc(u.jabatan)} · ${esc(u.kantorNama || u.kantor)}</small></div>
             <button class="btn-ghost-dark" id="btnPw">Ubah Password</button>
             <button class="btn-ghost-dark" id="btnLogout">Keluar</button>
           </div>

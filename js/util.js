@@ -15,6 +15,12 @@ const tgl = v => /^\d{4}-\d{2}-\d{2}/.test(String(v || ''))
   ? `${String(v).slice(8, 10)}/${String(v).slice(5, 7)}/${String(v).slice(0, 4)}` : String(v || '');
 const jam = v => String(v || '').replace('T', ' ').slice(0, 16);
 const pctTampil = v => (num(v) * 100).toFixed(2) + '%';
+const BULAN_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+// 2026-11-19 -> "19 November 2026"
+const tglPanjang = v => {
+  const s = String(v || '');
+  return /^\d{4}-\d{2}-\d{2}/.test(s) ? `${Number(s.slice(8, 10))} ${BULAN_ID[Number(s.slice(5, 7)) - 1]} ${s.slice(0, 4)}` : s;
+};
 
 const ROLE_LABEL = {
   AO: 'Account Officer', MANAJER_OPS: 'Manajer Marketing', PIMPINAN_CABANG: 'Pimpinan Cabang',
@@ -24,6 +30,7 @@ const ROLE_LABEL = {
 // Status permohonan: [label, kelas badge]
 const STATUS = {
   DRAFT: ['Draft', 'draft'],
+  DIBATALKAN: ['Dibatalkan', 'draft'],
   TAHAP1: ['Menunggu Penyetuju Tahap 1', 'waiting'],
   DIREKTUR: ['Menunggu Direktur Utama', 'direktur'],
   DISETUJUI: ['Disetujui', 'success'],

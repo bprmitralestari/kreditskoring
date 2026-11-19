@@ -1,5 +1,5 @@
 // ============================================================
-// KURSOR LEBAH — lebah kecil terbang mengikuti kursor (hanya perangkat dengan mouse)
+// KURSOR LEBAH — lebah bergaris kuning-hitam terbang mengikuti kursor (hanya perangkat dengan mouse)
 // Kursor asli tetap tampil agar tombol mudah diklik.
 // ============================================================
 (function () {
@@ -10,19 +10,34 @@
   bee.id = 'bee';
   bee.setAttribute('aria-hidden', 'true');
   bee.innerHTML = `
-    <svg viewBox="0 0 64 64">
-      <g class="wing wl"><ellipse cx="25" cy="18" rx="10" ry="6.5" fill="#E0F2FE" fill-opacity=".9" stroke="#7DD3FC"/></g>
-      <g class="wing wr"><ellipse cx="38" cy="18" rx="10" ry="6.5" fill="#E0F2FE" fill-opacity=".9" stroke="#7DD3FC"/></g>
-      <ellipse cx="31" cy="36" rx="17" ry="12" fill="#FACC15" stroke="#1F2937" stroke-width="2.5"/>
-      <path d="M22 26q-3 10 0 20M31 25q-3 11 0 22M40 26q-3 10 0 20" fill="none" stroke="#1F2937" stroke-width="3.5" stroke-linecap="round"/>
-      <circle cx="47" cy="32" r="7" fill="#FACC15" stroke="#1F2937" stroke-width="2.5"/>
-      <circle cx="49.5" cy="30" r="1.8" fill="#1F2937"/>
-      <path d="M14 36L3 33" stroke="#1F2937" stroke-width="2.5" stroke-linecap="round"/>
+    <svg viewBox="0 0 80 80">
+      <defs>
+        <linearGradient id="beeWing" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#BAE6FD"/>
+        </linearGradient>
+        <clipPath id="beeBody"><ellipse cx="36" cy="44" rx="24" ry="17"/></clipPath>
+      </defs>
+      <g class="wing wl"><path d="M34 34C26 8 8 6 6 16c-2 10 16 20 28 18z" fill="url(#beeWing)" fill-opacity=".95" stroke="#60A5FA" stroke-width="1.4"/></g>
+      <g class="wing wr"><path d="M40 34C48 8 66 6 68 16c2 10-16 20-28 18z" fill="url(#beeWing)" fill-opacity=".95" stroke="#60A5FA" stroke-width="1.4"/></g>
+      <path d="M12 44L2 40l10 6z" fill="#1F2937"/>
+      <ellipse cx="36" cy="44" rx="24" ry="17" fill="#FACC15"/>
+      <g clip-path="url(#beeBody)" fill="#1F2937">
+        <rect x="18" y="26" width="7" height="36"/><rect x="32" y="26" width="7" height="36"/><rect x="46" y="26" width="7" height="36"/>
+      </g>
+      <ellipse cx="36" cy="44" rx="24" ry="17" fill="none" stroke="#1F2937" stroke-width="2.5"/>
+      <path d="M31 58l-3 7M39 60l0 6M46 58l4 6" stroke="#1F2937" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M59 30q-3-10-9-13M65 30q3-10 9-13" fill="none" stroke="#1F2937" stroke-width="1.8" stroke-linecap="round"/>
+      <circle cx="50" cy="17" r="1.8" fill="#1F2937"/><circle cx="74" cy="17" r="1.8" fill="#1F2937"/>
+      <circle cx="58" cy="40" r="11" fill="#FACC15" stroke="#1F2937" stroke-width="2.5"/>
+      <ellipse cx="62" cy="37" rx="3.2" ry="4.2" fill="#1F2937"/>
+      <circle cx="63.2" cy="35.4" r="1.2" fill="#FFFFFF"/>
+      <path d="M60 46q4 2.6 8-.6" fill="none" stroke="#1F2937" stroke-width="1.6" stroke-linecap="round"/>
+      <ellipse cx="66" cy="43" rx="1.8" ry="1.2" fill="#F87171" opacity=".7"/>
     </svg>`;
   document.body.appendChild(bee);
 
-  const SIZE = 36;
-  const OFFSET_X = -20, OFFSET_Y = -16; // lebah berada sedikit di atas-kiri ujung kursor
+  const SIZE = 44;
+  const OFFSET_X = -22, OFFSET_Y = -20; // lebah berada sedikit di atas-kiri ujung kursor
   let x = innerWidth / 2, y = innerHeight / 2;
   let tx = x, ty = y, ang = 0, t = 0;
 

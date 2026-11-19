@@ -52,7 +52,7 @@ const blankForm = () => ({
   alamat: '', desa: '', kecamatan: '', kota: '', sektor: '', tujuan: '', profil_usaha: '',
   plafon: 0, tenor: 0, bunga: 0, jenis_angsuran: '',
   arus: { gaji: 0, usaha: 0, lain: 0, angsuran_hutang: 0, beban: {} },
-  skor: {}, relasi: [], agunan: [],
+  skor: {}, relasi: [], agunan: [], neraca: {},
 });
 
 const kpiIcon = d => `<span class="kpi-ic">${svg(d)}</span>`;
@@ -132,13 +132,29 @@ const LOGIN_DEFAULT = {
   overlay_persen: 0,
 };
 
+// Gaya teks halaman login (warna & ukuran per elemen). Default dipakai bila Admin belum mengatur.
+const GAYA_DEF = {
+  brand: { warna: '#FFFFFF', ukuran: 18 },
+  judul_utama: { warna: '#FFFFFF', ukuran: 40 },
+  judul_produk: { warna: '#93C5FD', ukuran: 22 },
+  deskripsi: { warna: '#C7D2FE', ukuran: 16 },
+  fitur: { warna: '#FFFFFF', ukuran: 14 },
+};
+const GAYA_ITEMS = [
+  ['brand', 'Nama bank'], ['judul_utama', 'Judul utama'], ['judul_produk', 'Nama produk'],
+  ['deskripsi', 'Deskripsi'], ['fitur', 'Poin fitur'],
+];
+const gayaStyle = (k, src) => {
+  const g = Object.assign({}, GAYA_DEF[k], (src || {})[k] || {});
+  return `color:${esc(g.warna)};font-size:${Number(g.ukuran) || GAYA_DEF[k].ukuran}px`;
+};
+
 Pages.login = () => {
   const T = Object.assign({}, LOGIN_DEFAULT, App.tampilan || {});
   const pOv = Number(T.overlay_persen);
   const ov = (isNaN(pOv) ? 0 : Math.min(95, Math.max(0, pOv))) / 100;
   const fitur = Array.isArray(T.fitur) ? T.fitur : [];
 
-  // Lapisan warna gelap hanya dipasang bila Admin mengaturnya lebih dari 0%
   const bgHtml = App.bg
     ? `<div class="lb-img" style="background-image:url('${App.bg}')"></div>` +
       (ov > 0 ? `<div class="lb-ov" style="background:rgba(11,27,63,${ov})"></div>` : '')
@@ -148,11 +164,11 @@ Pages.login = () => {
   <div class="auth-split">
     <section class="auth-brand">
       ${bgHtml}
-      <div class="brand-row"><div class="brand-mark">K</div><b>${esc(App.brand)}</b></div>
-      <h1>${esc(T.judul_utama).replace(/\n/g, '<br>')}</h1>
-      <h3>${esc(T.judul_produk)}</h3>
-      <p>${esc(T.deskripsi)}</p>
-      <ul class="feat">${fitur.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+      <div class="brand-row"><div class="brand-mark">K</div><b style="${gayaStyle('brand', App.gaya)}">${esc(App.brand)}</b></div>
+      <h1 style="${gayaStyle('judul_utama', App.gaya)}">${esc(T.judul_utama).replace(/\n/g, '<br>')}</h1>
+      <h3 style="${gayaStyle('judul_produk', App.gaya)}">${esc(T.judul_produk)}</h3>
+      <p style="${gayaStyle('deskripsi', App.gaya)}">${esc(T.deskripsi)}</p>
+      <ul class="feat" style="${gayaStyle('fitur', App.gaya)}">${fitur.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
     </section>
     <section class="auth-card-wrap">
       <form class="auth-card" id="fLogin" novalidate>
@@ -311,8 +327,9 @@ Pages.dashboard = async () => {
 // ============================================================
 Pages.daftar = async () => {
   const state = { q: '', status: '' };
+  const u = Session.get().user;
   const TABS = [['', 'Semua'], ['DRAFT', 'Draft'], ['TAHAP1', 'Menunggu Tahap 1'], ['DIREKTUR', 'Menunggu Direktur'],
-                ['DISETUJUI', 'Disetujui'], ['DITOLAK', 'Ditolak']];
+                ['DISETUJUI', 'Disetujui'], ['DITOLAK', 'Ditolak'], ['DIBATALKAN', 'Dibatalkan']];
 
   $('#main').innerHTML = `
     <div class="page-head"><div><h2>Daftar Permohonan Kredit</h2><p class="muted">Tampilan menyesuaikan lingkup peran Anda.</p></div>
@@ -326,13 +343,15 @@ Pages.daftar = async () => {
     </div>
     <div class="card table-wrap" id="tbl"><div class="skeleton"></div></div>`;
 
+  const bisaBatal = x => u.role === 'AO' && (x.status === 'DRAFT' || x.status === 'DITOLAK');
+
   const load = async () => {
     const r = await Api.call('list', state);
     if (!r.ok) return $('#tbl').innerHTML = `<p class="muted" style="padding:16px">${esc(r.msg)}</p>`;
     $('#tbl').innerHTML = `
       <table class="table">
         <thead><tr><th>No. SPPK</th><th>Nama Debitur</th><th>NIK</th><th>Skema &amp; Tenor</th>
-          <th class="num">Plafon</th><th>Predikat</th><th>Status</th><th>Tgl Dibuat</th></tr></thead>
+          <th class="num">Plafon</th><th>Predikat</th><th>Status</th><th>Tgl Dibuat</th><th></th></tr></thead>
         <tbody>${r.rows.length ? r.rows.map(x => `
           <tr>
             <td><a href="#/permohonan/${esc(x.id)}">${esc(x.sppk || 'DRAFT')}</a><br><small class="muted">${esc(x.jenis_permohonan)}</small></td>
@@ -343,11 +362,30 @@ Pages.daftar = async () => {
             <td>${chipPred(x.predikat)}</td>
             <td>${badge(x.status)}</td>
             <td>${tgl(x.dibuat)}</td>
-          </tr>`).join('') : '<tr><td colspan="8" class="muted">Tidak ada permohonan yang cocok.</td></tr>'}
+            <td>${bisaBatal(x) ? `<button class="btn-danger-outline sm" data-batal="${esc(x.id)}" data-nama="${esc(x.nama_debitur)}">Batalkan</button>` : ''}</td>
+          </tr>`).join('') : '<tr><td colspan="9" class="muted">Tidak ada permohonan yang cocok.</td></tr>'}
         </tbody></table>`;
   };
 
-  $('#fQ').oninput = debounce(e => { state.q = e.target.value.trim(); load(); }, 300);
+  // Pembatalan: data tidak dihapus, hanya ditandai "Dibatalkan"
+  $('#tbl').onclick = async e => {
+    const b = e.target.closest('[data-batal]');
+    if (!b) return;
+    const pilih = await Dialog.show({
+      tone: 'warn', title: `Batalkan permohonan ${b.dataset.nama}?`,
+      items: ['Permohonan tidak dihapus, hanya ditandai Dibatalkan dan tetap tersimpan untuk jejak audit.'],
+      actions: [{ label: 'Tidak', key: 'close', cls: 'btn-secondary' }, { label: 'Ya, batalkan', key: 'ok', cls: 'btn-danger' }],
+    });
+    if (pilih !== 'ok') return;
+    const r = await Api.call('batalkan', { id: b.dataset.batal });
+    if (!r.ok) return Dialog.show({ tone: 'error', title: 'Belum dapat dibatalkan', items: [r.msg],
+      actions: [{ label: 'Mengerti', key: 'close', cls: 'btn-primary' }] });
+    Toast.show('Permohonan dibatalkan.', 'ok');
+    load();
+  };
+
+  // Pencarian langsung (debounce pendek) dan filter status tanpa halaman ulang
+  $('#fQ').oninput = debounce(e => { state.q = e.target.value.trim(); load(); }, 200);
   $('#tabStatus').onclick = e => {
     const b = e.target.closest('[data-st]');
     if (!b) return;
@@ -402,6 +440,7 @@ Pages.detail = async id => {
   if (r.bisaUbah) act.push(`<a class="btn-secondary" href="#/permohonan/${esc(id)}/edit/1">Ubah</a>`,
                            '<button class="btn-primary" data-act="ajukan">Ajukan ke Penyetuju</button>');
   if (r.bisaRevisi) act.push('<button class="btn-secondary" data-act="revisi">Revisi Permohonan</button>');
+  if (r.bisaBatal) act.push('<button class="btn-danger-outline" data-act="batal">Batalkan Permohonan</button>');
   if (r.bisaPutus) act.push(`<a class="btn-primary" href="#/persetujuan/${esc(id)}">Review &amp; Putuskan</a>`);
   act.push(`<a class="btn-secondary" href="#/memo/${esc(id)}">Lihat Memo</a>`);
   if (x.status === 'DISETUJUI') act.push('<button class="btn-primary" data-act="pdf">Unduh PDF</button>');
@@ -410,7 +449,7 @@ Pages.detail = async id => {
     <div class="page-head"><div>
       <a class="link" href="#/permohonan">← Daftar Permohonan</a>
       <h2>${esc(x.nama_debitur)}</h2>
-      <p class="muted">${esc(x.sppk || 'Belum diajukan (draft)')} · ${esc(x.kantor)} · Versi ${x.versi}</p></div>
+      <p class="muted">${esc(x.sppk || 'Belum diajukan (draft)')} · ${esc(x.kantor_label || x.kantor)} · Versi ${x.versi}</p></div>
       <div class="actions">${badge(x.status)}</div></div>
     <div class="card"><div class="kpis-inline">
       ${kpiMini('Plafon', rp(x.plafon))}${kpiMini('Tenor', x.tenor_bulan + ' bulan')}
@@ -429,7 +468,7 @@ Pages.detail = async id => {
     const body = $('#tabBody');
     if (tab === 'data') {
       body.innerHTML = `<div class="grid-3">
-        ${[['Nama lengkap', f.nama], ['NIK', f.nik], ['Pekerjaan', f.pekerjaan], ['Tempat, tgl lahir', [f.tempat_lahir, tgl(f.tgl_lahir)].filter(Boolean).join(', ')],
+        ${[['Nama lengkap', f.nama], ['NIK', f.nik], ['Pekerjaan', f.pekerjaan], ['Tempat, tgl lahir', [f.tempat_lahir, tglPanjang(f.tgl_lahir)].filter(Boolean).join(', ')],
            ['Status pernikahan', f.nikah], ['Telepon', f.telp], ['Alamat', [f.alamat, f.desa, f.kecamatan, f.kota].filter(Boolean).join(', ')],
            ['Sektor (KBLI)', f.sektor], ['Tujuan pinjaman', f.tujuan], ['Jenis permohonan', x.jenis_permohonan],
            ['Suku bunga flat', (f.bunga || 0) + '% p.a.'], ['Jenis angsuran', f.jenis_angsuran]]
@@ -448,8 +487,8 @@ Pages.detail = async id => {
         `<div class="kpis-inline" style="margin-top:14px">${kpiMini('Total nilai', x.total_nilai !== '' ? Number(x.total_nilai).toFixed(2) : '-')}${kpiMini('Predikat', esc(x.predikat || '-'))}</div>`;
     } else if (tab === 'berkas') {
       body.innerHTML = `<div class="berkas-block"><b>Foto identitas debitur</b>${berkasGrid(ctx, 'fotoDebitur', true)}</div>
-        ${(f.relasi || []).map((_, i) => `<div class="berkas-block"><b>Relasi ${i + 1}</b>${berkasGrid(ctx, `relasi.${i}.foto`, true)}</div>`).join('')}
-        ${(f.agunan || []).map((_, i) => `<div class="berkas-block"><b>Agunan ${i + 1}</b>${berkasGrid(ctx, `agunan.${i}.dok`, true)}</div>`).join('')}`;
+        ${(f.relasi || []).map((r, i) => `<div class="berkas-block"><b>Relasi ${i + 1}</b>${berkasGrid(ctx, `relasi.${r.uid ?? i}.foto`, true)}</div>`).join('')}
+        ${(f.agunan || []).map((a, i) => `<div class="berkas-block"><b>Agunan ${i + 1}</b>${berkasGrid(ctx, `agunan.${a.uid ?? i}.dok`, true)}</div>`).join('')}`;
       loadThumbs(body);
     } else {
       body.innerHTML = r.riwayat.length ? `<table class="table"><thead><tr><th>Waktu</th><th>Pelaku</th><th>Jabatan</th><th>Aksi</th><th>Status</th><th>Catatan</th></tr></thead><tbody>
@@ -475,6 +514,17 @@ Pages.detail = async id => {
       if (!s.ok) return Toast.show(s.msg, 'error');
       Toast.show('Revisi dibuat sebagai draft baru.', 'ok');
       location.hash = `#/permohonan/${s.id}/edit/1`;
+    } else if (b.dataset.act === 'batal') {
+      const pilih = await Dialog.show({
+        tone: 'warn', title: 'Batalkan permohonan ini?',
+        items: ['Permohonan ditandai Dibatalkan dan tetap tersimpan untuk jejak audit.'],
+        actions: [{ label: 'Tidak', key: 'close', cls: 'btn-secondary' }, { label: 'Ya, batalkan', key: 'ok', cls: 'btn-danger' }],
+      });
+      if (pilih !== 'ok') return;
+      const s = await Api.call('batalkan', { id });
+      if (!s.ok) return Toast.show(s.msg, 'error');
+      Toast.show('Permohonan dibatalkan.', 'ok');
+      location.hash = '#/permohonan';
     } else if (b.dataset.act === 'pdf') {
       await downloadPdf(id);
     }
@@ -485,650 +535,6 @@ async function downloadPdf(id) {
   const r = await Api.call('pdf', { id });
   if (!r.ok) return Toast.show(r.msg, 'error');
   unduh(r.data, r.name, 'application/pdf');
-}
-
-// ============================================================
-// FORM PERMOHONAN (4 langkah: Data · Arus Kas · 5C · Pratinjau & Ajukan)
-// ============================================================
-const FLAT_IND = KRITERIA.flatMap(p => p.items);          // urutan sama dengan IND di server
-const pctTxt = v => (v == null ? '-' : (Math.round(v * 1000) / 10) + '%');
-const adaBerkas = (ctx, bagian) => (ctx.berkas || []).some(b => b.bagian === bagian);
-const sektorNama = (ctx, kode) => {
-  const s = (ctx.sektor || []).find(x => x.kode === kode);
-  return s ? s.kode + ' — ' + s.nama : (kode || '-');
-};
-const fotoGroups = ctx => {
-  const d = ctx.draft;
-  const list = [{ bagian: 'fotoDebitur', label: 'Foto identitas debitur' }];
-  (d.relasi || []).forEach((r, i) => list.push({ bagian: `relasi.${i}.foto`, label: `Relasi ${i + 1}${r.nama ? ' · ' + r.nama : ''}` }));
-  (d.agunan || []).forEach((a, i) => list.push({ bagian: `agunan.${i}.dok`, label: `Dokumen agunan ${i + 1}${a.nama ? ' · ' + a.nama : ''}` }));
-  return list.map(g => ({ ...g, count: (ctx.berkas || []).filter(b => b.bagian === g.bagian).length }));
-};
-
-async function loadSektor() {
-  if (!App.cache.sektor) {
-    const r = await Api.call('sektor');
-    App.cache.sektor = r.ok ? r.rows : [];
-  }
-  return App.cache.sektor;
-}
-
-Pages.form = async (id, step = 1) => {
-  step = Math.min(4, Math.max(1, Number(step) || 1));
-  const ctx = {
-    id: id || null, step, draft: blankForm(), berkas: [], rec: null,
-    last: null, penyetuju: '', invalid: new Set(), saveQ: Promise.resolve(), timer: null,
-  };
-  const [r, sek] = await Promise.all([id ? Api.call('get', { id }) : Promise.resolve(null), loadSektor()]);
-  if (id) {
-    if (!r.ok) return App.error(r.msg);
-    if (!r.bisaUbah) return App.error('Permohonan ini tidak dapat diubah pada status saat ini.');
-    ctx.rec = r.rec;
-    ctx.berkas = r.berkas || [];
-    ctx.draft = Object.assign(blankForm(), r.form);
-  }
-  ctx.sektor = sek;
-  renderForm(ctx);
-};
-
-const STEP_TITLES = ['Data Debitur & Agunan', 'Arus Kas & Neraca', 'Penilaian Kertas Kerja 5C', 'Pratinjau & Ajukan'];
-const STEP_FN = [stepDebitur, stepArus, stepPenilaian, stepPratinjau];
-
-// ---------- Validasi ----------
-// sev: 'error' = wajib (menghalangi pengajuan), 'warn' = catatan saja
-function cekStep(ctx, n) {
-  const d = ctx.draft, out = [];
-  const add = (k, msg, sev = 'error') => out.push({ step: n, k, msg, sev });
-
-  if (n === 1) {
-    if (!d.jenis_permohonan) add('jenis_permohonan', 'Jenis permohonan belum dipilih');
-    if (!d.skema) add('skema', 'Skema pembayaran belum dipilih');
-    if (!d.jenis_debitur) add('jenis_debitur', 'Jenis calon debitur belum dipilih');
-    if (!String(d.nama || '').trim()) add('nama', 'Nama lengkap debitur belum diisi');
-    if (!/^\d{16}$/.test(String(d.nik || ''))) add('nik', d.nik ? 'NIK harus 16 digit angka' : 'NIK belum diisi');
-    if (!d.sektor) add('sektor', 'Sektor ekonomi belum dipilih');
-    (d.agunan || []).forEach((a, i) => {
-      const no = `Agunan ${i + 1}`;
-      const bilyet = a.jenis === 'Bilyet Deposito';
-      if (!a.jenis) add(`agunan.${i}.jenis`, `${no}: jenis agunan belum dipilih`);
-      if (!(num(bilyet ? a.nominalD : a.taksasi) > 0)) {
-        add(bilyet ? `agunan.${i}.nominalD` : `agunan.${i}.taksasi`,
-          `${no}: ${bilyet ? 'nominal deposito' : 'nilai taksasi'} belum diisi`);
-      }
-    });
-    if (!adaBerkas(ctx, 'fotoDebitur')) add(null, 'Foto identitas debitur belum diunggah', 'warn');
-  }
-
-  if (n === 2) {
-    if (!(num(d.plafon) > 0)) add('plafon', 'Usulan plafon belum diisi');
-    if (!(num(d.tenor) > 0)) add('tenor', 'Jangka waktu (bulan) belum diisi');
-    if (!(num(d.bunga) > 0)) add('bunga', 'Suku bunga flat belum diisi');
-    if (!d.jenis_angsuran) add('jenis_angsuran', 'Jenis angsuran belum dipilih');
-    const a = d.arus || {};
-    if (!(num(a.gaji) + num(a.usaha) + num(a.lain) > 0)) {
-      add('arus.gaji', 'Pendapatan belum diisi (gaji, omset, atau pendapatan lain)', 'warn');
-    }
-  }
-
-  if (n === 3) {
-    FLAT_IND.forEach(it => {
-      if (it.auto) return;
-      const v = num((d.skor || {})[it.k]);
-      if (!(v >= 1 && v <= 5)) add('skor:' + it.k, `Penilaian 5C "${it.l}" belum dipilih`);
-    });
-  }
-  return out;
-}
-const cekSemua = ctx => [1, 2, 3].flatMap(n => cekStep(ctx, n));
-
-// ---------- Kerangka form ----------
-function renderForm(ctx) {
-  if (!ctx.hitung) attachHitung(ctx);
-  const akhir = ctx.step === 4;
-  $('#main').innerHTML = `
-    <div class="page-head"><div>
-      <a class="link" href="${ctx.id ? '#/permohonan/' + esc(ctx.id) : '#/permohonan'}">← ${ctx.id ? 'Detail permohonan' : 'Daftar permohonan'}</a>
-      <h2>${ctx.id ? 'Ubah Permohonan' : 'Permohonan Kredit Baru'}</h2>
-      <p class="muted">${ctx.rec ? esc(ctx.rec.sppk || 'Draft') : 'Draft belum tersimpan'}</p></div>
-      <div class="actions"><span class="saved" id="saveState"></span>
-        <button class="btn-secondary" data-act="save">Simpan Draft</button></div></div>
-    <nav class="stepper">${STEP_TITLES.map((t, i) => `
-      <button class="step ${i + 1 === ctx.step ? 'is-active' : ''} ${i + 1 < ctx.step ? 'is-done' : ''}" data-go="${i + 1}">${i + 1}. ${esc(t)}</button>`).join('')}</nav>
-    <div class="form-layout ${akhir ? 'one' : ''}">
-      <section class="card form-main" id="stepBody"></section>
-      ${akhir ? '' : '<aside class="card preview" id="preview"></aside>'}
-    </div>
-    <div class="bottombar" id="bottombar"></div>`;
-
-  const main = $('#main');
-  main.onclick = e => formClick(e, ctx);
-  main.oninput = e => formInput(e, ctx);
-  main.onchange = e => formChange(e, ctx);
-  updateBottom(ctx);
-  renderBody(ctx);
-}
-
-function updateBottom(ctx) {
-  const bar = $('#bottombar');
-  if (!bar) return;
-  const prev = ctx.step > 1
-    ? `<button class="btn-secondary btn-lg" data-go="${ctx.step - 1}">← Sebelumnya</button>` : '<span></span>';
-  const next = ctx.step < 4
-    ? `<button class="btn-primary btn-lg" data-act="next">${ctx.step === 3 ? 'Lanjut ke Pratinjau →' : 'Lanjut →'}</button>`
-    : `<button class="btn-primary btn-lg" data-act="submit">Ajukan ke ${esc(ctx.penyetuju || 'Penyetuju Tahap 1')}</button>`;
-  bar.innerHTML = prev + next;
-}
-
-function renderBody(ctx) {
-  const body = $('#stepBody');
-  body.innerHTML = STEP_FN[ctx.step - 1](ctx);
-  applyInvalid(ctx);
-  loadThumbs(body);
-  ctx.hitung();
-}
-
-// Tandai field yang bermasalah (merah). Mengembalikan elemen pertama yang ditandai.
-function applyInvalid(ctx) {
-  let first = null;
-  ctx.invalid.forEach(k => {
-    const el = k.startsWith('skor:')
-      ? $(`#stepBody [data-skor="${k.slice(5)}"]`)
-      : $(`#stepBody [data-k="${k}"]`);
-    if (el) { el.classList.add('is-invalid'); first = first || el; }
-  });
-  return first;
-}
-
-function markInvalid(ctx, errs) {
-  errs.forEach(e => { if (e.k) ctx.invalid.add(e.k); });
-  const el = applyInvalid(ctx);
-  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-}
-
-function markOk(ctx, el) {
-  el.classList.remove('is-invalid');
-  ctx.invalid.delete(el.dataset.k || (el.dataset.skor ? 'skor:' + el.dataset.skor : ''));
-}
-
-// Pratinjau perhitungan (debounce). Server tetap sumber kebenaran.
-function attachHitung(ctx) {
-  ctx.hitung = debounce(async () => {
-    const r = await Api.call('hitung', { form: ctx.draft });
-    if (!r.ok) return;
-    ctx.last = r;
-    if (r.penyetuju) ctx.penyetuju = r.penyetuju;
-    if (ctx.step === 4) {
-      const body = $('#stepBody');
-      if (body) { body.innerHTML = stepPratinjau(ctx); loadThumbs(body); }
-      updateBottom(ctx);
-    } else {
-      renderPreview(ctx, r);
-    }
-  }, 200);
-}
-
-// ---------- Langkah 1: Data debitur ----------
-function stepDebitur(ctx) {
-  const d = ctx.draft;
-  const sek = ctx.sektor.map(x => `<option value="${esc(x.kode)}" ${x.kode === d.sektor ? 'selected' : ''}>${esc(x.kode)} — ${esc(x.nama)}</option>`).join('');
-  return `
-  <h3>A.1 Informasi Permohonan</h3>
-  <div class="grid-3">
-    ${sIn(d, 'jenis_permohonan', 'Jenis permohonan', ['Kredit Modal Kerja', 'Kredit Investasi', 'Kredit Konsumtif'], { req: true })}
-    ${sIn(d, 'skema', 'Skema pembayaran', ['Modal Kerja', 'Investasi', 'Konsumtif'], { req: true })}
-    ${sIn(d, 'jenis_debitur', 'Jenis calon debitur', ['Perorangan', 'Badan Usaha'], { req: true })}
-  </div>
-  <h3>A.2 Identitas Calon Debitur</h3>
-  <div class="grid-3">
-    ${tIn(d, 'nama', 'Nama lengkap (sesuai KTP)', { req: true })}
-    ${tIn(d, 'nik', 'NIK (16 digit)', { req: true, maxlen: 16 })}
-    ${tIn(d, 'tempat_lahir', 'Tempat lahir')}
-    ${tIn(d, 'tgl_lahir', 'Tanggal lahir', { type: 'date' })}
-    ${sIn(d, 'jk', 'Jenis kelamin', SEL_JK)}
-    ${sIn(d, 'nikah', 'Status pernikahan', SEL_NIKAH)}
-    ${sIn(d, 'pendidikan', 'Pendidikan terakhir', SEL_DIDIK)}
-    ${tIn(d, 'pekerjaan', 'Pekerjaan / jabatan')}
-    ${tIn(d, 'telp', 'No. WA / telepon')}
-    ${tIn(d, 'email', 'Email', { type: 'email' })}
-    ${tIn(d, 'desa', 'Desa / kelurahan')}
-    ${tIn(d, 'kecamatan', 'Kecamatan')}
-    ${tIn(d, 'kota', 'Kab / kota')}
-    ${aIn(d, 'alamat', 'Alamat sesuai KTP')}
-  </div>
-  <div class="berkas-block"><b>Foto identitas debitur</b>${berkasGrid(ctx, 'fotoDebitur')}</div>
-
-  <h3>A.3 Tujuan Pinjaman & Profil Usaha</h3>
-  <div class="grid-2">
-    <label class="fld"><span>Sektor ekonomi (KBLI) <b class="req">*</b></span>
-      <select class="input" data-k="sektor"><option value="">- pilih -</option>${sek}</select></label>
-    ${tIn(d, 'tujuan', 'Tujuan penggunaan pinjaman')}
-    ${aIn(d, 'profil_usaha', 'Ringkasan profil usaha / pekerjaan')}
-  </div>
-
-  <h3>A.4 Pasangan, Keluarga & Relasi</h3>
-  ${d.relasi.map((_, i) => `
-    <div class="sub-card"><div class="sub-head"><b>Relasi ${i + 1}</b>
-      <button class="btn-ghost-dark sm" style="width:auto;margin:0;color:var(--text)" data-act="delRelasi" data-i="${i}">Hapus</button></div>
-      <div class="grid-3">
-        ${sIn(d, `relasi.${i}.relasi`, 'Hubungan', SEL_RELASI)}
-        ${tIn(d, `relasi.${i}.nama`, 'Nama lengkap')}
-        ${tIn(d, `relasi.${i}.nik`, 'NIK')}
-        ${tIn(d, `relasi.${i}.telp`, 'Telepon')}
-      </div>
-      <div class="berkas-block">${berkasGrid(ctx, `relasi.${i}.foto`)}</div>
-    </div>`).join('')}
-  <button class="btn-secondary" data-act="addRelasi">+ Tambah relasi</button>
-
-  <h3>A.5 Data Agunan / Jaminan</h3>
-  ${d.agunan.map((a, i) => `
-    <div class="sub-card"><div class="sub-head"><b>Agunan ${i + 1}</b>
-      <button class="btn-ghost-dark sm" style="width:auto;margin:0;color:var(--text)" data-act="delAgunan" data-i="${i}">Hapus</button></div>
-      <div class="grid-3">
-        ${sIn(d, `agunan.${i}.jenis`, 'Jenis agunan', JENIS_AGUNAN)}
-        ${tIn(d, `agunan.${i}.nama`, 'Nama / uraian agunan')}
-        ${sIn(d, `agunan.${i}.bukti`, 'Bukti kepemilikan', ['SHM', 'SHGB', 'AJB', 'BPKB', 'Bilyet', 'Lainnya'])}
-        ${tIn(d, `agunan.${i}.noSert`, 'No. sertifikat / BPKB / rekening')}
-        ${aIn(d, `agunan.${i}.alamat`, 'Alamat agunan')}
-        ${a.jenis === 'Bilyet Deposito'
-          ? mIn(d, `agunan.${i}.nominalD`, 'Nominal deposito')
-          : mIn(d, `agunan.${i}.taksasi`, 'Nilai taksasi pasar')}
-      </div>
-      <div class="berkas-block">${berkasGrid(ctx, `agunan.${i}.dok`)}</div>
-    </div>`).join('')}
-  <button class="btn-secondary" data-act="addAgunan">+ Tambah agunan</button>`;
-}
-
-// ---------- Langkah 2: Arus kas ----------
-function stepArus(ctx) {
-  const d = ctx.draft;
-  return `
-  <h3>B.0 Pinjaman yang Diusulkan</h3>
-  <div class="grid-3">
-    ${mIn(d, 'plafon', 'Usulan plafon (Rp)', { req: true })}
-    ${nIn(d, 'tenor', 'Jangka waktu (bulan)', { req: true })}
-    ${nIn(d, 'bunga', 'Suku bunga flat (% p.a.)', { req: true })}
-  </div>
-  <div class="grid-2">
-    ${sIn(d, 'jenis_angsuran', 'Jenis angsuran', ['KAB', 'KB', 'PRK', 'PROMES'], { req: true, hint: 'KAB = anuitas. Bunga efektif dihitung otomatis.' })}
-  </div>
-
-  <h3>B.1 Laba Rugi Usaha / Penghasilan Bulanan</h3>
-  <div class="grid-3">
-    ${mIn(d, 'arus.gaji', 'Gaji / penghasilan tetap')}
-    ${mIn(d, 'arus.usaha', 'Pendapatan usaha (omset)')}
-    ${mIn(d, 'arus.lain', 'Pendapatan lain')}
-  </div>
-  <h4>Beban usaha & rumah tangga per bulan</h4>
-  <div class="grid-3">${BEBAN.map(([k, l]) => mIn(d, 'arus.beban.' + k, l)).join('')}</div>
-
-  <h3>B.2 Kewajiban kepada Pihak Lain</h3>
-  <div class="grid-2">
-    ${mIn(d, 'arus.angsuran_hutang', 'Angsuran hutang lain / bulan')}
-  </div>`;
-}
-
-// ---------- Langkah 3: Penilaian 5C ----------
-function stepPenilaian(ctx) {
-  const d = ctx.draft;
-  const bob = ctx.last ? ctx.last.bobot : null;
-  const kurang = bob ? FLAT_IND.filter(i => bob.indikator[i.k] === undefined).map(i => i.k) : [];
-  const banner = kurang.length
-    ? `<div class="pv-alert pv-err"><b>Bobot indikator belum lengkap di Parameter (${kurang.join(', ')}).</b>
-       Minta Admin melengkapi menu Parameter sebelum penilaian dilakukan.</div>` : '';
-
-  return `
-  <h3>C. Kertas Kerja Penilaian 5C</h3>
-  <p class="muted">Pilih kondisi yang paling sesuai. Skor 5 = paling baik. RPC dihitung otomatis dari arus kas.</p>
-  ${banner}
-  ${KRITERIA.map((p, pi) => `
-    <div class="pillar">
-      <div class="pillar-head"><span class="pn">${pi + 1}</span><b>${esc(p.nama)}</b>
-        <span class="badge badge-draft">Bobot pilar ${pctTxt(bob ? bob.pilar[p.nama] : undefined)}</span></div>
-      <table class="table"><thead><tr><th>Indikator</th><th class="c">Bobot</th><th>Pilihan</th><th class="num">Skor</th></tr></thead><tbody>
-      ${p.items.map(it => {
-        const wInd = bob ? bob.indikator[it.k] : undefined;
-        if (it.auto) {
-          const rpcTxt = ctx.last ? (ctx.last.hasil.rpc * 100).toFixed(2) + '%' : '-';
-          return `<tr><td>${esc(it.l)}</td><td class="c">${pctTxt(wInd)}</td>
-            <td class="muted">Otomatis dari arus kas · RPC ${rpcTxt}</td>
-            <td class="num"><b id="rpcCell">${ctx.last ? ctx.last.skor_rpc : '-'}</b></td></tr>`;
-        }
-        const cur = Number((d.skor || {})[it.k]) || 0;
-        return `<tr><td>${esc(it.l)}</td><td class="c">${pctTxt(wInd)}</td>
-          <td><select class="input" data-skor="${it.k}"><option value="">- pilih -</option>
-            ${[5, 4, 3, 2, 1].map((s, j) => `<option value="${s}" ${cur === s ? 'selected' : ''}>${s} — ${esc(it.o[j])}</option>`).join('')}
-          </select></td>
-          <td class="num"><b>${cur || '-'}</b></td></tr>`;
-      }).join('')}
-      </tbody></table>
-    </div>`).join('')}`;
-}
-
-// ---------- Langkah 4: Pratinjau lengkap sebelum diajukan ----------
-function stepPratinjau(ctx) {
-  if (!ctx.last) return '<div class="skeleton"></div>';
-  const d = ctx.draft, h = ctx.last.hasil, bob = ctx.last.bobot;
-  const errs = cekSemua(ctx);
-  const hard = errs.filter(e => e.sev === 'error');
-  const warn = errs.filter(e => e.sev === 'warn');
-  const langkah = [...new Set(hard.map(e => e.step))];
-  const kv = (l, v) => `<div class="pv-kv"><small>${esc(l)}</small><b>${v}</b></div>`;
-  const alamat = [d.alamat, d.desa, d.kecamatan, d.kota].filter(Boolean).join(', ') || '-';
-
-  const agunanRows = (d.agunan || []).map((a, i) => {
-    const hs = ctx.last.agunan[i] || {};
-    return `<tr><td>${esc(a.jenis || '-')}</td><td>${esc(a.nama || '-')}</td><td>${esc(a.bukti || '-')}</td>
-      <td class="num">${rp(hs.taksasi)}</td><td class="num">${rp(hs.likuidasi)}</td></tr>`;
-  }).join('');
-
-  let idx = 0;
-  const rows5 = KRITERIA.map((p, pi) => `
-    <tr class="grup"><td colspan="5">${pi + 1}. ${esc(p.nama)} · bobot pilar ${pctTxt(bob.pilar[p.nama])}</td></tr>` +
-    p.items.map(it => {
-      const det = ctx.last.detail[idx++];
-      const pilihan = it.auto
-        ? `Otomatis dari arus kas (RPC ${(h.rpc * 100).toFixed(2)}%)`
-        : (det.skor ? it.o[5 - det.skor] : 'Belum dipilih');
-      return `<tr><td>${esc(it.l)}</td><td class="c">${pctTxt(det.bobotInd)}</td><td>${esc(pilihan)}</td>
-        <td class="c"><b>${det.skor || '-'}</b></td><td class="c">${det.kontrib.toFixed(4)}</td></tr>`;
-    }).join('')).join('');
-
-  return `
-  ${hard.length
-    ? `<div class="pv-alert pv-err">
-        <b>Belum dapat diajukan: ${hard.length} data belum lengkap</b>
-        <ul>${hard.map(e => `<li><span class="pv-step">Langkah ${e.step}</span>${esc(e.msg)}</li>`).join('')}</ul>
-        <div class="pv-jump">${langkah.map(s => `<button class="btn-primary" data-go="${s}">Perbaiki Langkah ${s}</button>`).join('')}</div>
-       </div>`
-    : `<div class="pv-alert pv-ok"><b>✓ Semua data wajib sudah lengkap.</b>
-        Periksa sekali lagi, lalu ajukan ke ${esc(ctx.penyetuju || 'penyetuju tahap 1')}.</div>`}
-  ${warn.length ? `<div class="pv-alert pv-warn"><b>Catatan</b><ul>${warn.map(e => `<li>${esc(e.msg)}</li>`).join('')}</ul></div>` : ''}
-
-  <section class="pv-sec"><h4>A. Data Debitur</h4><div class="pv-grid">
-    ${kv('Nama lengkap', esc(d.nama || '-'))}${kv('NIK', esc(d.nik || '-'))}
-    ${kv('Jenis permohonan', esc(d.jenis_permohonan || '-'))}${kv('Skema pembayaran', esc(d.skema || '-'))}
-    ${kv('Jenis calon debitur', esc(d.jenis_debitur || '-'))}${kv('Pekerjaan', esc(d.pekerjaan || '-'))}
-    ${kv('Telepon', esc(d.telp || '-'))}${kv('Sektor ekonomi (KBLI)', esc(sektorNama(ctx, d.sektor)))}
-    ${kv('Alamat', esc(alamat))}${kv('Tujuan pinjaman', esc(d.tujuan || '-'))}
-  </div></section>
-
-  <section class="pv-sec"><h4>B. Usulan Pinjaman & Kapasitas Bayar</h4><div class="pv-grid">
-    ${kv('Usulan plafon', rp(d.plafon))}${kv('Jangka waktu', (d.tenor || 0) + ' bulan')}
-    ${kv('Suku bunga flat', (d.bunga || 0) + '% p.a.')}${kv('Jenis angsuran', esc(d.jenis_angsuran || '-'))}
-    ${kv('Angsuran per bulan', rp(h.renc))}${kv('Bunga efektif (KAB)', h.efektif != null ? h.efektif + '% p.a.' : '-')}
-    ${kv('Total pendapatan', rp(h.pend))}${kv('Total beban', rp(h.beban))}
-    ${kv('Laba bersih', rp(h.laba))}${kv('Angsuran hutang lain', rp(h.angHutang))}
-    ${kv('Sisa penghasilan', rp(h.sisa))}${kv('RPC', h.sisa > 0 ? (h.rpc * 100).toFixed(2) + '%' : 'Tidak dapat dihitung')}
-  </div></section>
-
-  <section class="pv-sec"><h4>C. Agunan</h4>
-    ${(d.agunan || []).length
-      ? `<div class="table-wrap"><table class="table"><thead><tr><th>Jenis</th><th>Nama / uraian</th><th>Bukti</th><th class="num">Taksasi</th><th class="num">Likuidasi</th></tr></thead><tbody>${agunanRows}</tbody></table></div>`
-      : '<p class="muted">Tidak ada agunan.</p>'}
-  </section>
-
-  <section class="pv-sec"><h4>D. Foto & Dokumen</h4>
-    ${fotoGroups(ctx).map(g => `<div class="pv-group"><b>${esc(g.label)}</b>
-      ${g.count ? berkasGrid(ctx, g.bagian, true) : '<span class="muted">Belum ada berkas.</span>'}</div>`).join('')}
-  </section>
-
-  <section class="pv-sec"><h4>E. Penilaian Kertas Kerja 5C</h4>
-    <div class="table-wrap"><table class="table"><thead><tr><th>Indikator</th><th class="c">Bobot</th><th>Pilihan</th><th class="c">Skor</th><th class="c">Kontribusi</th></tr></thead>
-    <tbody>${rows5}</tbody></table></div>
-  </section>
-
-  <section class="pv-sec pv-hasil">
-    <div><small>Nilai total</small><b>${Number(h.total).toFixed(2)}</b><small>dari 5,00</small></div>
-    <div>${chipPred(h.predikat)}</div>
-  </section>`;
-}
-
-// ---------- Panel kanan (langkah 1-3) ----------
-function renderPreview(ctx, r) {
-  const el = $('#preview');
-  if (!el) return;
-  const h = r.hasil;
-
-  if (ctx.step === 1) {
-    const cov = ctx.draft.plafon ? ((r.agunan || []).reduce((s, a) => s + num(a.likuidasi), 0) / num(ctx.draft.plafon) * 100) : 0;
-    const rows = (r.agunan || []).map(a => `<tr><td>${esc(a.jenis)}</td><td class="num">${rp(a.likuidasi)}</td></tr>`).join('');
-    el.innerHTML = `<h4>Agunan & Likuidasi</h4>
-      ${rows ? `<table class="table"><tbody>${rows}</tbody></table>
-        <p class="hint">Coverage likuidasi terhadap plafon: <b>${cov.toFixed(1)}%</b></p>`
-        : '<p class="muted">Belum ada agunan.</p>'}
-      <h4>Foto & Dokumen</h4>
-      ${fotoGroups(ctx).map(g => `<div class="pv-group"><small class="muted">${esc(g.label)}${g.count ? ' · ' + g.count + ' berkas' : ': belum ada'}</small>
-        ${g.count ? berkasGrid(ctx, g.bagian, true) : ''}</div>`).join('')}`;
-  } else if (ctx.step === 2) {
-    el.innerHTML = `<h4>Kapasitas Bayar</h4>
-      <dl class="kv">
-        <dt>Angsuran pokok</dt><dd>${rp(h.angPokok)}</dd>
-        <dt>Angsuran bunga</dt><dd>${rp(h.angBunga)}</dd>
-        <dt>Rencana angsuran</dt><dd><b>${rp(h.renc)}</b></dd>
-        <dt>Total pendapatan</dt><dd>${rp(h.pend)}</dd>
-        <dt>Total beban</dt><dd>${rp(h.beban)}</dd>
-        <dt>Laba bersih</dt><dd>${rp(h.laba)}</dd>
-        <dt>Sisa penghasilan</dt><dd>${rp(h.sisa)}</dd>
-      </dl>
-      ${h.sisa > 0
-        ? `<div class="rpc ${h.rpc > 0.8 ? 'rpc-bad' : ''}"><small>RPC</small><b>${(h.rpc * 100).toFixed(2)}%</b>
-             ${h.rpc > 0.8 ? '<span>Di atas 80%: perlu tinjauan struktur kredit.</span>' : ''}</div>`
-        : '<div class="rpc rpc-bad"><small>RPC</small><b>Tidak dapat dihitung</b><span>Sisa penghasilan tidak positif.</span></div>'}
-      ${h.efektif != null ? `<p class="hint">Bunga efektif KAB: ${h.efektif}% p.a.</p>` : ''}`;
-  } else {
-    el.innerHTML = `<h4>Hasil Penilaian</h4>
-      <div class="score">${Number(h.total).toFixed(2)}<small>dari 5.00</small></div>
-      <p>${chipPred(h.predikat)}</p>
-      <table class="table pv-mini"><tbody>${r.detail.map((dt, i) => `
-        <tr><td>${esc(FLAT_IND[i].l)}</td><td class="c">${pctTxt(dt.bobotInd)}</td><td class="num"><b>${dt.skor || '-'}</b></td></tr>`).join('')}
-      </tbody></table>
-      <p class="hint">Nilai akhir dihitung ulang di server saat diajukan.</p>`;
-    const rc = $('#rpcCell');
-    if (rc) rc.textContent = r.skor_rpc;
-  }
-  loadThumbs(el);
-}
-
-// ---------- Penanganan event ----------
-function edited(ctx) { scheduleSave(ctx); ctx.hitung(); }
-
-function formInput(e, ctx) {
-  const el = e.target;
-  if (el.dataset.k && el.tagName !== 'SELECT') {
-    setPath(ctx.draft, el.dataset.k, parseVal(el));
-    markOk(ctx, el);
-    edited(ctx);
-  }
-}
-
-async function formChange(e, ctx) {
-  const el = e.target;
-  if (el.dataset.k && el.tagName === 'SELECT') {
-    setPath(ctx.draft, el.dataset.k, el.value);
-    markOk(ctx, el);
-    if (/^agunan\.\d+\.jenis$/.test(el.dataset.k)) { scheduleSave(ctx); return renderBody(ctx); }
-    return edited(ctx);
-  }
-  if (el.dataset.skor) {
-    ctx.draft.skor[el.dataset.skor] = Number(el.value) || 0;
-    markOk(ctx, el);
-    const row = el.closest('tr');
-    if (row) row.querySelector('td.num b').textContent = el.value || '-';
-    return edited(ctx);
-  }
-  if (el.dataset.k && el.dataset.n === 'm') {
-    el.value = fmtMoney(getPath(ctx.draft, el.dataset.k));
-    scheduleSave(ctx);
-  }
-  if (el.dataset.upload) return uploadFiles(ctx, el);
-}
-
-async function formClick(e, ctx) {
-  const t = e.target.closest('[data-go],[data-act]');
-  if (!t) return;
-  if (t.dataset.go) return goStep(ctx, Number(t.dataset.go));
-  switch (t.dataset.act) {
-    case 'save': return saveDraft(ctx, true);
-    case 'next': return nextStep(ctx);
-    case 'submit': return submitForm(ctx);
-    case 'addRelasi': ctx.draft.relasi.push({ relasi: 'Istri / Suami' }); edited(ctx); return renderBody(ctx);
-    case 'delRelasi': ctx.draft.relasi.splice(Number(t.dataset.i), 1); edited(ctx); return renderBody(ctx);
-    case 'addAgunan': ctx.draft.agunan.push({ jenis: JENIS_AGUNAN[0] }); edited(ctx); return renderBody(ctx);
-    case 'delAgunan': ctx.draft.agunan.splice(Number(t.dataset.i), 1); edited(ctx); return renderBody(ctx);
-    case 'delBerkas': return deleteBerkas(ctx, t.dataset.id);
-  }
-}
-
-// ---------- Simpan (autosave + manual, berurutan) ----------
-async function saveDraft(ctx, notify = false) {
-  const st = $('#saveState');
-  if (st) st.textContent = 'Menyimpan…';
-  let r;
-  try { r = await Api.call('save', { id: ctx.id, form: ctx.draft }); }
-  catch (e) { r = { ok: false, msg: 'Gagal menyimpan.' }; }
-  if (!r.ok) {
-    if (st) st.textContent = 'Belum tersimpan';
-    Toast.show(r.msg || 'Gagal menyimpan.', 'error');
-    return false;
-  }
-  ctx.id = r.id;
-  const st2 = $('#saveState');
-  if (st2) st2.textContent = 'Tersimpan ' + new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-  if (notify) Toast.show('Draft tersimpan.', 'ok');
-  return true;
-}
-
-function queueSave(ctx, notify = false) {
-  ctx.saveQ = ctx.saveQ.then(() => saveDraft(ctx, notify));
-  return ctx.saveQ;
-}
-
-// Simpan otomatis 1,5 detik setelah pengguna berhenti mengetik
-function scheduleSave(ctx) {
-  clearTimeout(ctx.timer);
-  ctx.timer = setTimeout(() => queueSave(ctx, false), 1500);
-}
-
-// Pindah langkah langsung (tanpa menunggu server); simpan dijalankan di latar belakang
-async function goStep(ctx, n) {
-  if (!ctx.id && !(await queueSave(ctx, false))) return;
-  if (ctx.id) { clearTimeout(ctx.timer); queueSave(ctx, false); }
-  ctx.step = n;
-  history.replaceState(null, '', `#/permohonan/${ctx.id}/edit/${n}`);
-  renderForm(ctx);
-}
-
-// Tombol "Lanjut": periksa langkah ini dulu
-async function nextStep(ctx) {
-  const errs = cekStep(ctx, ctx.step);
-  const hard = errs.filter(e => e.sev === 'error');
-  const warn = errs.filter(e => e.sev === 'warn');
-
-  if (hard.length) {
-    ctx.invalid = new Set();
-    markInvalid(ctx, hard);
-    const pilih = await Dialog.show({
-      tone: 'error',
-      title: `Lengkapi ${hard.length} data pada langkah ini`,
-      items: hard.map(e => e.msg),
-      actions: [
-        { label: 'Lengkapi dulu', key: 'close', cls: 'btn-primary' },
-        { label: 'Lanjut tanpa melengkapi', key: 'skip', cls: 'btn-secondary' },
-      ],
-    });
-    if (pilih !== 'skip') return;
-  } else if (warn.length) {
-    Toast.show('Catatan: ' + warn[0].msg + '.', 'info');
-  }
-  return goStep(ctx, ctx.step + 1);
-}
-
-// Pengajuan: periksa semua langkah, tampilkan daftar kekurangan di tengah layar
-async function submitForm(ctx) {
-  const errs = cekSemua(ctx);
-  const hard = errs.filter(e => e.sev === 'error');
-  const warn = errs.filter(e => e.sev === 'warn');
-
-  if (hard.length) {
-    const langkah = [...new Set(hard.map(e => e.step))];
-    const pilih = await Dialog.show({
-      tone: 'error',
-      title: `Ada ${hard.length} data yang belum lengkap`,
-      items: hard.map(e => `Langkah ${e.step}: ${e.msg}`),
-      actions: [
-        { label: 'Tutup', key: 'close', cls: 'btn-secondary' },
-        ...langkah.map(s => ({ label: `Buka Langkah ${s}`, key: 's' + s, cls: 'btn-primary' })),
-      ],
-    });
-    if (pilih && pilih.startsWith('s')) {
-      const s = Number(pilih.slice(1));
-      ctx.invalid = new Set(hard.filter(e => e.step === s).map(e => e.k).filter(Boolean));
-      return goStep(ctx, s);
-    }
-    return;
-  }
-
-  const pilih = await Dialog.show({
-    tone: warn.length ? 'warn' : 'ok',
-    title: `Ajukan permohonan ke ${ctx.penyetuju || 'penyetuju tahap 1'}?`,
-    items: warn.length
-      ? ['Catatan (tidak menghalangi pengajuan):', ...warn.map(w => w.msg)]
-      : ['Setelah diajukan, data tidak dapat diubah sampai dikembalikan.'],
-    actions: [
-      { label: 'Batal', key: 'close', cls: 'btn-secondary' },
-      { label: 'Ya, ajukan', key: 'ok', cls: 'btn-primary' },
-    ],
-  });
-  if (pilih !== 'ok') return;
-
-  clearTimeout(ctx.timer);
-  if (!(await queueSave(ctx, false))) return;
-  const r = await Api.call('submit', { id: ctx.id });
-  if (!r.ok) {
-    return Dialog.show({ tone: 'error', title: 'Pengajuan belum dapat diproses', items: [r.msg],
-      actions: [{ label: 'Mengerti', key: 'close', cls: 'btn-primary' }] });
-  }
-  Toast.show('Permohonan diajukan. SPPK: ' + r.sppk, 'ok');
-  location.hash = '#/permohonan/' + ctx.id;
-}
-
-// ---------- Berkas ----------
-async function uploadFiles(ctx, input) {
-  const bagian = input.dataset.upload;
-  const files = Array.from(input.files || []);
-  input.value = '';
-  if (!files.length) return;
-  if (!ctx.id && !(await queueSave(ctx, false))) return;
-
-  const hasil = await Promise.all(files.map(async f => {
-    try {
-      const p = await fileToPayload(f);
-      const r = await Api.call('upload', Object.assign({ id: ctx.id, bagian }, p));
-      return r.ok ? null : r.msg;
-    } catch (err) {
-      return err.message;
-    }
-  }));
-  const gagal = hasil.filter(Boolean);
-  if (gagal.length) {
-    await Dialog.show({ tone: 'error', title: 'Sebagian berkas belum terunggah', items: gagal,
-      actions: [{ label: 'Mengerti', key: 'close', cls: 'btn-primary' }] });
-  }
-  const g = await Api.call('get', { id: ctx.id });
-  if (g.ok) ctx.berkas = g.berkas || [];
-  renderBody(ctx);
-}
-
-async function deleteBerkas(ctx, idBerkas) {
-  if (!confirm('Hapus berkas ini dari permohonan? Berkas tetap tersimpan di Drive untuk jejak audit.')) return;
-  const r = await Api.call('deleteFile', { id_berkas: idBerkas });
-  if (!r.ok) {
-    return Dialog.show({ tone: 'error', title: 'Berkas belum dapat dihapus', items: [r.msg],
-      actions: [{ label: 'Mengerti', key: 'close', cls: 'btn-primary' }] });
-  }
-  const g = await Api.call('get', { id: ctx.id });
-  if (g.ok) ctx.berkas = g.berkas || [];
-  renderBody(ctx);
 }
 
 // ============================================================
@@ -1257,11 +663,14 @@ Pages.akun = () => {
 // ============================================================
 // PANEL ADMIN
 // ============================================================
+// Label kantor untuk pilihan: KP tampil sebagai "Kantor Pusat"
+const kantorLabel = k => (k.kode_kantor === 'KP' ? 'Kantor Pusat' : k.nama_kantor) + ` (${k.kode_kantor})`;
+
 Pages.adminUsers = async () => {
   const [ur, kr] = await Promise.all([Api.call('users'), Api.call('kop')]);
   if (!ur.ok) return App.error(ur.msg);
   const rows = ur.rows || [];
-  const kantor = (kr.rows || []).map(k => k.kode_kantor);
+  const kantor = kr.ok ? (kr.rows || []) : [];
   $('#main').innerHTML = `
     <div class="page-head"><div><h2>Pengguna</h2><p class="muted">Kelola akun, peran, dan kantor penugasan.</p></div>
       <button class="btn-primary" id="btnAdd">+ Tambah Pengguna</button></div>
@@ -1269,10 +678,11 @@ Pages.adminUsers = async () => {
       <thead><tr><th>Username</th><th>Nama</th><th>Jabatan</th><th>Peran</th><th>Kantor</th><th>Aktif</th><th>Login terakhir</th><th></th></tr></thead>
       <tbody>${rows.map(x => `<tr>
         <td>${esc(x.username)}</td><td>${esc(x.nama)}</td><td>${esc(x.jabatan)}</td>
-        <td>${esc(ROLE_LABEL[x.role] || x.role)}</td><td>${esc(x.kantor)}</td>
+        <td>${esc(ROLE_LABEL[x.role] || x.role)}</td><td>${esc(x.kantor_label || x.kantor)}</td>
         <td><button class="toggle ${x.aktif ? 'on' : ''}" data-toggle="${esc(x.username)}" title="Aktif / nonaktif"></button></td>
         <td>${jam(x.login_terakhir)}</td>
-        <td><button class="btn-secondary sm" data-edit="${esc(x.username)}">Ubah</button></td></tr>`).join('')}
+        <td class="aksi-2"><button class="btn-secondary sm" data-edit="${esc(x.username)}">Ubah</button>
+          <button class="btn-danger-outline sm" data-hapus="${esc(x.username)}">Hapus</button></td></tr>`).join('')}
       </tbody></table></div>`;
 
   const reload = () => Pages.adminUsers();
@@ -1280,6 +690,7 @@ Pages.adminUsers = async () => {
   $('#main').onclick = async e => {
     const tg = e.target.closest('[data-toggle]');
     const ed = e.target.closest('[data-edit]');
+    const hp = e.target.closest('[data-hapus]');
     if (tg) {
       const x = rows.find(r => r.username === tg.dataset.toggle);
       if (!x) return;
@@ -1289,13 +700,27 @@ Pages.adminUsers = async () => {
       reload();
     } else if (ed) {
       userModal(rows.find(r => r.username === ed.dataset.edit), kantor, reload);
+    } else if (hp) {
+      const username = hp.dataset.hapus;
+      const pilih = await Dialog.show({
+        tone: 'warn', title: `Hapus pengguna ${username}?`,
+        items: ['Akun dihapus dari daftar dan tidak dapat login lagi. Pengguna yang sudah memiliki permohonan tidak dapat dihapus (nonaktifkan saja).'],
+        actions: [{ label: 'Batal', key: 'close', cls: 'btn-secondary' }, { label: 'Ya, hapus', key: 'ok', cls: 'btn-danger' }],
+      });
+      if (pilih !== 'ok') return;
+      const r = await Api.call('hapusUser', { username });
+      if (!r.ok) return Dialog.show({ tone: 'error', title: 'Pengguna belum dapat dihapus', items: [r.msg],
+        actions: [{ label: 'Mengerti', key: 'close', cls: 'btn-primary' }] });
+      Toast.show('Pengguna dihapus.', 'ok');
+      reload();
     }
   };
 };
 
 function userModal(row, kantor, done) {
   const edit = !!row;
-  const r = row || { username: '', nama: '', jabatan: '', role: 'AO', kantor: kantor[0] || '', aktif: true };
+  const r = row || { username: '', nama: '', jabatan: '', role: 'AO', kantor: (kantor[0] || {}).kode_kantor || '', aktif: true };
+  const opsiKantor = kantor.map(k => `<option value="${esc(k.kode_kantor)}" ${k.kode_kantor === r.kantor ? 'selected' : ''}>${esc(kantorLabel(k))}</option>`).join('');
   const m = modal(`
     <h3>${edit ? 'Ubah' : 'Tambah'} Pengguna</h3>
     <label class="fld"><span>Username *</span><input class="input" id="uU" value="${esc(r.username)}" ${edit ? 'readonly' : ''}></label>
@@ -1303,8 +728,8 @@ function userModal(row, kantor, done) {
     <label class="fld"><span>Jabatan</span><input class="input" id="uJ" value="${esc(r.jabatan)}"></label>
     <label class="fld"><span>Peran *</span><select class="input" id="uR">
       ${Object.entries(ROLE_LABEL).map(([k, v]) => `<option value="${k}" ${k === r.role ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
-    <label class="fld"><span>Kantor *</span><select class="input" id="uK">
-      ${kantor.map(k => `<option ${k === r.kantor ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select></label>
+    <label class="fld"><span>Kantor *</span><select class="input" id="uK">${opsiKantor}</select>
+      <small class="hint">Kantor cabang baru ditambahkan melalui menu Kop Surat.</small></label>
     <label class="fld"><span>${edit ? 'Reset password (kosongkan jika tidak diubah)' : 'Password awal *'}</span>
       <input class="input" id="uP" type="password" autocomplete="new-password"></label>
     <label class="chk"><input type="checkbox" id="uA" ${r.aktif ? 'checked' : ''}> Akun aktif</label>
@@ -1537,11 +962,12 @@ Pages.adminTampilan = async () => {
   const fitur = (T.fitur || '').split('|');
   let bgShown = r.bg || '';
   let bgBaru = null, hapusBg = false;
+  const nilaiGaya = (k, what) => T[what + '_' + k] ?? (what === 'warna' ? GAYA_DEF[k].warna : GAYA_DEF[k].ukuran);
 
   $('#main').innerHTML = `
     <div class="page-head"><div>
       <h2>Tampilan Login</h2>
-      <p class="muted">Pratinjau di bawah menunjukkan tampilan halaman login. Perubahan teks langsung terlihat.</p>
+      <p class="muted">Pratinjau menunjukkan tampilan halaman login. Atur warna dan ukuran tiap teks agar terbaca di atas gambar.</p>
     </div></div>
     <section class="card">
       <h3>Pratinjau Halaman Login</h3>
@@ -1550,7 +976,7 @@ Pages.adminTampilan = async () => {
     </section>
     <div class="dash-grid" style="margin-top:16px">
       <section class="card">
-        <h3>Teks</h3>
+        <h3>Teks & Warna</h3>
         <form id="fTeks" class="grid-2">
           ${fld('Judul utama (Enter untuk baris baru)',
             `<textarea class="input" rows="2" name="judul_utama">${esc(T.judul_utama || '')}</textarea>`, { wide: true })}
@@ -1562,12 +988,20 @@ Pages.adminTampilan = async () => {
             `<input class="input" data-fitur="${i}" value="${esc(fitur[i] || '')}">`)).join('')}
           ${fld('Lapisan warna gelap (0 = tanpa warna, maks. 95%)',
             `<input class="input" type="number" min="0" max="95" name="overlay_persen" value="${esc(T.overlay_persen ?? 0)}">`)}
+          <div class="wide">
+            <h4 style="margin:6px 0">Warna & ukuran teks</h4>
+            ${GAYA_ITEMS.map(([k, l]) => `
+              <div class="gaya-row"><span>${esc(l)}</span>
+                <input type="color" name="warna_${k}" value="${esc(nilaiGaya(k, 'warna'))}">
+                <input class="input" type="number" min="8" max="96" name="ukuran_${k}" value="${esc(nilaiGaya(k, 'ukuran'))}">
+                <small class="hint">px</small></div>`).join('')}
+          </div>
           <div class="actions end" style="grid-column:1/-1"><button class="btn-primary" type="submit">Simpan Teks</button></div>
         </form>
       </section>
       <section class="card">
         <h3>Gambar Latar</h3>
-        <p class="hint">JPG, PNG, atau WEBP. Setiap kali gambar baru disimpan, lapisan warna gelap otomatis dikembalikan ke 0% (tanpa warna biru).</p>
+        <p class="hint">JPG, PNG, atau WEBP. Setiap kali gambar baru disimpan, lapisan warna gelap otomatis dikembalikan ke 0%.</p>
         <div class="actions" style="margin-top:12px">
           <label class="btn-secondary upload"><input type="file" id="bgFile" accept="image/jpeg,image/png,image/webp" hidden>Pilih gambar</label>
           <button class="btn-secondary" id="bgHapus">Hapus gambar</button>
@@ -1579,21 +1013,22 @@ Pages.adminTampilan = async () => {
   const pesan = (title, items) => Dialog.show({ tone: 'error', title, items,
     actions: [{ label: 'Mengerti', key: 'close', cls: 'btn-primary' }] });
 
-  // Pratinjau: meniru susunan halaman login (gambar, lapisan, teks, dan kartu)
+  // Pratinjau langsung: meniru susunan halaman login, termasuk warna dan ukuran teks
   const lihat = () => {
     const f = $('#fTeks');
     const v = n => f.querySelector(`[name=${n}]`).value;
     const ov = Math.min(95, Math.max(0, Number(v('overlay_persen')) || 0));
     const fit = $$('[data-fitur]', f).map(x => x.value.trim()).filter(Boolean);
+    const st = k => `color:${v('warna_' + k)};font-size:${Number(v('ukuran_' + k)) || GAYA_DEF[k].ukuran}px`;
     $('#lpBox').innerHTML = `
       ${bgShown ? `<div class="lb-img" style="background-image:url('${bgShown}')"></div>` : '<div class="lp-plain"></div>'}
       ${ov > 0 ? `<div class="lb-ov" style="background:rgba(11,27,63,${ov / 100})"></div>` : ''}
       <div class="lp-txt">
-        <div class="lp-brand"><span class="lp-mark">K</span>${esc(App.brand)}</div>
-        <h3>${esc(v('judul_utama')).replace(/\n/g, '<br>')}</h3>
-        <h5>${esc(v('judul_produk'))}</h5>
-        <p>${esc(v('deskripsi'))}</p>
-        <ul>${fit.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+        <div class="lp-brand" style="${st('brand')}"><span class="lp-mark">K</span>${esc(App.brand)}</div>
+        <h3 style="${st('judul_utama')}">${esc(v('judul_utama')).replace(/\n/g, '<br>')}</h3>
+        <h5 style="${st('judul_produk')}">${esc(v('judul_produk'))}</h5>
+        <p style="${st('deskripsi')}">${esc(v('deskripsi'))}</p>
+        <ul style="${st('fitur')}">${fit.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
       </div>
       <div class="lp-card"><b>${esc(v('judul_kartu'))}</b><small>${esc(v('subjudul_kartu'))}</small>
         <i></i><i></i><span></span></div>`;
@@ -1615,6 +1050,7 @@ Pages.adminTampilan = async () => {
     const nilai = {};
     ['judul_utama', 'judul_produk', 'judul_kartu', 'subjudul_kartu', 'deskripsi', 'overlay_persen']
       .forEach(k => { nilai[k] = f.querySelector(`[name=${k}]`).value.trim(); });
+    $$('[name^="warna_"],[name^="ukuran_"]', f).forEach(x => { nilai[x.name] = x.value.trim(); });
     nilai.fitur = $$('[data-fitur]', f).map(x => x.value.trim()).filter(Boolean).join('|');
     kirim({ nilai }, 'Teks login tersimpan.');
   };
@@ -1646,7 +1082,7 @@ Pages.adminTampilan = async () => {
   $('#bgSimpan').onclick = async () => {
     if (!bgBaru && !hapusBg) return pesan('Belum ada gambar', ['Pilih gambar terlebih dahulu, atau tekan Hapus gambar.']);
     const body = hapusBg ? { hapus_bg: true } : { bg_base64: bgBaru.data, bg_mime: bgBaru.mime };
-    const ok = await kirim(body, 'Gambar latar tersimpan. Klik Keluar lalu lihat halaman login.');
+    const ok = await kirim(body, 'Gambar latar tersimpan.');
     if (ok) {
       bgShown = App.bg || '';
       if (!hapusBg) $('#fTeks').querySelector('[name=overlay_persen]').value = 0;

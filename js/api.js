@@ -21,7 +21,11 @@ const READ_TTL = {
 
 // Aksi tulis: setelah dipanggil, seluruh cache dihapus
 const WRITE = new Set(['login', 'logout', 'mypass', 'save', 'submit', 'revise', 'upload', 'deleteFile',
-  'decide', 'usave', 'spar', 'skop', 'ssektor', 'stampilan']);
+  'decide', 'usave', 'spar', 'skop', 'ssektor', 'stampilan', 'batalkan', 'hapusUser']);
+
+// Data referensi yang disimpan juga di localStorage: halaman tampil seketika saat dibuka ulang,
+// lalu diperbarui dari server di latar belakang (stale-while-revalidate).
+const SWR = new Set(['loginbg', 'sektor']);
 
 // Bilah tipis di atas layar saat ada permintaan ke server
 const Loader = {
@@ -41,6 +45,12 @@ const Api = {
 
   clear() { this._cache.clear(); this._inflight.clear(); },
 
+  // Baca nilai tersimpan lokal (tanpa jaringan), null jika belum ada
+  peek(action) {
+    try { const s = localStorage.getItem('kk_swr_' + action); return s ? JSON.parse(s) : null; }
+    catch (e) { return null; }
+  },
+
   async call(action, data = {}) {
     const ttl = READ_TTL[action];
     const key = action + '|' + JSON.stringify(data);
@@ -52,6 +62,9 @@ const Api = {
     const p = this._request(action, data).then(r => {
       if (WRITE.has(action)) this._cache.clear();
       if (ttl && r && r.ok) this._cache.set(key, { v: r, t: Date.now() });
+      if (SWR.has(action) && r && r.ok) {
+        try { localStorage.setItem('kk_swr_' + action, JSON.stringify(r)); } catch (e) { /* kuota penuh: abaikan */ }
+      }
       return r;
     }).finally(() => this._inflight.delete(key));
     if (ttl) this._inflight.set(key, p);
