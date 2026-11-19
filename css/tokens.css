@@ -1,0 +1,301 @@
+/* ==========================================================
+   Kredit Skoring - Design Tokens (v2, palet berwarna)
+   Dipakai oleh frontend HTML. Ubah nilai di :root saja.
+   ========================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+
+:root {
+  /* ---------- Sidebar ---------- */
+  --sidebar-top: #0E1A3D;
+  --sidebar-bottom: #14286B;
+  --sidebar-width: 240px;
+  --sidebar-text: #C7D2FE;
+  --sidebar-text-muted: rgba(199, 210, 254, 0.8);
+  --sidebar-hover: rgba(255, 255, 255, 0.06);
+  --sidebar-active: #2F6BFF;
+
+  /* ---------- Aksen ---------- */
+  --accent: #2F6BFF;
+  --accent-hover: #1F55E0;
+  --accent-soft: rgba(47, 107, 255, 0.12);
+  --accent-ring: rgba(47, 107, 255, 0.15);
+  --violet: #7C3AED;
+
+  /* ---------- Latar & permukaan ---------- */
+  --bg: #F4F6FB;
+  --surface: #FFFFFF;
+  --surface-muted: #F4F6FB;
+  --border: #E5E7EB;
+  --border-strong: #D6DEEB;
+  --row-divider: #EEF1F6;
+
+  /* ---------- Teks ---------- */
+  --text: #1E1B4B;
+  --text-2: #6B7280;
+  --text-on-accent: #FFFFFF;
+
+  /* ---------- Status ---------- */
+  --success: #16A34A;
+  --teal: #0891B2;
+  --warning: #F59E0B;
+  --orange: #F97316;
+  --danger: #EF4444;
+  --draft: #94A3B8;
+
+  /* Latar lembut untuk badge (12%) */
+  --success-soft: rgba(22, 163, 74, 0.12);
+  --teal-soft: rgba(8, 145, 178, 0.12);
+  --warning-soft: rgba(245, 158, 11, 0.14);
+  --orange-soft: rgba(249, 115, 22, 0.12);
+  --danger-soft: rgba(239, 68, 68, 0.12);
+  --draft-soft: rgba(148, 163, 184, 0.16);
+  --accent-badge-soft: rgba(47, 107, 255, 0.12);
+
+  /* ---------- Gradien kartu KPI ---------- */
+  --kpi-blue: linear-gradient(135deg, #3B82F6, #2F6BFF);
+  --kpi-violet: linear-gradient(135deg, #8B5CF6, #6D28D9);
+  --kpi-green: linear-gradient(135deg, #22C55E, #16A34A);
+  --kpi-orange: linear-gradient(135deg, #FB923C, #F97316);
+  --kpi-teal: linear-gradient(135deg, #2DD4BF, #0891B2);
+
+  /* ---------- Grafik (urutan) ---------- */
+  --chart-1: #2F6BFF;
+  --chart-2: #22C55E;
+  --chart-3: #8B5CF6;
+  --chart-4: #F59E0B;
+  --chart-5: #14B8A6;
+  --chart-6: #F97316;
+
+  /* ---------- Predikat 5C ---------- */
+  --pred-sangat-layak: #16A34A;
+  --pred-layak: #0891B2;
+  --pred-cukup-layak: #F59E0B;
+  --pred-kurang-layak: #F97316;
+  --pred-tidak-layak: #EF4444;
+
+  /* ---------- Tipografi ---------- */
+  --font-display: 'Plus Jakarta Sans', 'Segoe UI', Arial, sans-serif;
+  --font-body: 'Inter', 'Segoe UI', Arial, sans-serif;
+
+  --fs-display: 36px;
+  --fs-headline: 28px;
+  --fs-title: 20px;
+  --fs-card-title: 16px;
+  --fs-body: 14px;
+  --fs-body-sm: 13px;
+  --fs-label: 12px;
+  --fs-caption: 11px;
+
+  /* ---------- Shape ---------- */
+  --radius-card: 16px;
+  --radius-control: 10px;
+  --radius-pill: 999px;
+  --radius-modal: 16px;
+
+  /* ---------- Bayangan (lembut) ---------- */
+  --shadow-card: 0 2px 8px rgba(30, 27, 75, 0.06);
+  --shadow-card-hover: 0 6px 18px rgba(30, 27, 75, 0.10);
+  --shadow-modal: 0 20px 50px rgba(14, 26, 61, 0.25);
+  --overlay: rgba(14, 26, 61, 0.45);
+
+  /* ---------- Spasi (8-point) ---------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* ---------- Tata letak ---------- */
+  --topbar-height: 72px;
+  --page-margin: 32px;
+  --page-margin-mobile: 16px;
+  --gutter: 24px;
+  --control-height: 40px;
+
+  /* ---------- Gerak ---------- */
+  --transition: 150ms ease;
+}
+
+/* ==========================================================
+   Komponen dasar yang memakai token di atas
+   ========================================================== */
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .kpi-value {
+  font-family: var(--font-display);
+  color: var(--text);
+  margin: 0;
+}
+
+h1 { font-size: var(--fs-headline); font-weight: 700; }
+h2 { font-size: var(--fs-title); font-weight: 700; }
+h3 { font-size: var(--fs-card-title); font-weight: 600; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--space-5) var(--space-6);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow var(--transition), transform var(--transition);
+}
+.card:hover { box-shadow: var(--shadow-card-hover); }
+
+.kpi-card {
+  border-radius: var(--radius-card);
+  padding: var(--space-5);
+  color: #FFFFFF;
+  box-shadow: var(--shadow-card);
+}
+.kpi-card.blue { background: var(--kpi-blue); }
+.kpi-card.violet { background: var(--kpi-violet); }
+.kpi-card.green { background: var(--kpi-green); }
+.kpi-card.orange { background: var(--kpi-orange); }
+.kpi-card.teal { background: var(--kpi-teal); }
+.kpi-card .kpi-value { color: #FFFFFF; font-size: var(--fs-display); font-weight: 700; }
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border: 0;
+  border-radius: var(--radius-control);
+  height: var(--control-height);
+  padding: 0 var(--space-5);
+  font: 600 var(--fs-body) var(--font-body);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.btn-primary:hover { background: var(--accent-hover); }
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--accent);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  height: var(--control-height);
+  padding: 0 var(--space-5);
+  font: 600 var(--fs-body) var(--font-body);
+  cursor: pointer;
+}
+.btn-secondary:hover { background: var(--accent-soft); }
+
+.btn-danger {
+  background: var(--danger);
+  color: #FFFFFF;
+  border: 0;
+  border-radius: var(--radius-control);
+  height: var(--control-height);
+  padding: 0 var(--space-5);
+  font: 600 var(--fs-body) var(--font-body);
+}
+
+.input {
+  height: var(--control-height);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: 0 var(--space-4);
+  font: 400 var(--fs-body) var(--font-body);
+  color: var(--text);
+  background: var(--surface);
+  width: 100%;
+  box-sizing: border-box;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.input.is-error { border-color: var(--danger); }
+.input.is-error:focus { box-shadow: 0 0 0 3px var(--danger-soft); }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font: 600 var(--fs-caption) var(--font-body);
+  letter-spacing: 0.02em;
+}
+.badge-success { background: var(--success-soft); color: var(--success); }
+.badge-waiting { background: var(--accent-badge-soft); color: var(--accent); }
+.badge-danger { background: var(--danger-soft); color: var(--danger); }
+.badge-draft { background: var(--draft-soft); color: #64748B; }
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-body-sm);
+  font-variant-numeric: tabular-nums;
+}
+.table th {
+  background: var(--surface-muted);
+  color: var(--text-2);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+}
+.table td {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--row-divider);
+}
+.table tbody tr:hover { background: var(--surface-muted); }
+.table .num { text-align: right; }
+
+.sidebar {
+  width: var(--sidebar-width);
+  min-height: 100vh;
+  background: linear-gradient(180deg, var(--sidebar-top), var(--sidebar-bottom));
+  color: var(--sidebar-text);
+  box-sizing: border-box;
+  padding: var(--space-5) var(--space-4);
+}
+.sidebar .nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 40px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  color: var(--sidebar-text-muted);
+  font-size: var(--fs-body);
+  transition: background var(--transition);
+}
+.sidebar .nav-item:hover { background: var(--sidebar-hover); }
+.sidebar .nav-item.is-active {
+  background: var(--sidebar-active);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+/* Warna predikat (dipakai di chip dan meter) */
+.pred-sangat-layak { color: var(--pred-sangat-layak); }
+.pred-layak { color: var(--pred-layak); }
+.pred-cukup-layak { color: var(--pred-cukup-layak); }
+.pred-kurang-layak { color: var(--pred-kurang-layak); }
+.pred-tidak-layak { color: var(--pred-tidak-layak); }
+
+/* Responsif */
+@media (max-width: 768px) {
+  :root { --page-margin: var(--page-margin-mobile); }
+  .sidebar { width: 64px; padding: var(--space-4) var(--space-2); }
+  .sidebar .nav-item span.label { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
