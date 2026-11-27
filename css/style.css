@@ -468,3 +468,11 @@ td.ket { font-size: 12px; color: var(--text-2); min-width: 120px; }
 /* Aksi tabel pengguna */
 .aksi-2 { white-space: nowrap; }
 .aksi-2 .sm + .sm, .aksi-2 .btn-secondary + .btn-danger-outline { margin-left: 6px; }
+
+/* v5: panel pratinjau memo, blok SLIK, dan penyesuaian tanggal */
+.form-layout { grid-template-columns: minmax(0, 1fr) 460px; }
+.preview-frame { width: 100%; height: calc(100vh - 210px); min-height: 640px; border: 1px solid var(--border);
+  border-radius: var(--radius-card); background: #fff; }
+.slik-box { border-left: 3px solid var(--accent, #2F6BFF); padding: 4px 0 4px 14px; margin: 14px 0 6px; }
+.slik-box > b { display: block; margin-bottom: 8px; }
+@media (max-width: 1100px) { .preview-frame { min-height: 480px; } }

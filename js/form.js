@@ -1,9 +1,9 @@
 // ============================================================
-// FORM PERMOHONAN (4 langkah: Data Debitur & Agunan · Arus Kas & Neraca · 5C · Pratinjau & Ajukan)
+// FORM PERMOHONAN (v5)
 // Urutan wajib: langkah berikutnya hanya terbuka jika langkah sebelumnya lengkap.
-// Perhitungan kredit SELALU dilakukan server; frontend hanya menampilkan.
+// Perhitungan kredit dan memo SELALU dilakukan server; frontend hanya menampilkan.
 // ============================================================
-const FLAT_IND = KRITERIA.flatMap(p => p.items);          // urutan sama dengan IND di server
+const FLAT_IND = KRITERIA.flatMap(p => p.items);
 const STEP_TITLES = ['Data Debitur & Agunan', 'Arus Kas & Neraca', 'Penilaian Kertas Kerja 5C', 'Pratinjau & Ajukan'];
 const BEBAN_USAHA = [['hpp', 'HPP / pembelian bahan baku'], ['tenaga', 'Beban tenaga kerja'], ['sewa', 'Beban sewa'],
   ['transport', 'Transportasi'], ['listrik', 'Listrik & air'], ['telekom', 'Telekomunikasi'], ['lainU', 'Beban usaha lainnya']];
@@ -12,23 +12,55 @@ const HARTA = [['kas', 'Kas & saldo bank'], ['piutang', 'Piutang usaha'], ['pers
   ['tanah', 'Tanah & bangunan'], ['kendaraan', 'Kendaraan'], ['mesin', 'Mesin & peralatan'], ['lainAset', 'Aset lainnya']];
 const KEWAJIBAN = [['hutangUsaha', 'Hutang usaha / supplier'], ['hutangBank', 'Hutang bank lain'], ['hutangLain', 'Hutang lainnya (non-bank)']];
 const SKOR_KET = { 5: 'Sangat baik', 4: 'Baik', 3: 'Cukup baik', 2: 'Kurang baik', 1: 'Tidak baik' };
+const HUB_STATUS = ['Nasabah baru', 'Nasabah lama'];
+const SLIK_STATUS = ['Tidak ada pinjaman', 'Ada histori pinjaman'];
+const SLIK_KUALITAS = [['1', '1 — Lancar'], ['2', '2 — DPK'], ['3', '3 — Kurang lancar'], ['4', '4 — Diragukan'], ['5', '5 — Macet']];
+const BUKTI_TANAH = ['SHM', 'SHGB', 'AJB', 'Lainnya'];
 
+// Field per jenis agunan. Format: [kunci, label, tipe, opsi]
+// t teks · a area · m rupiah · n angka · d tanggal · s pilihan · x otomatis
+// HARUS sama dengan AGUNAN_WAJIB di Code.gs
+const FIELD_KENDARAAN = [['nama', 'Nama agunan', 't'], ['no_bpkb', 'No. BPKB', 't'], ['no_pol', 'No. polisi', 't'],
+  ['pemilik', 'Nama pemilik', 't'], ['tahun', 'Tahun pembuatan', 'n'], ['no_mesin', 'No. mesin', 't'],
+  ['no_rangka', 'No. rangka', 't'], ['merek', 'Merek', 't'], ['jenis_unit', 'Jenis', 't'], ['taksasi', 'Nilai taksasi (harga pasar)', 'm']];
+const AGUNAN_FIELDS = {
+  'Tanah': [['nama', 'Nama agunan', 't'], ['luas_tanah', 'Luas tanah (m²)', 'n'], ['alamat', 'Alamat', 'a'],
+    ['catatan', 'Catatan / spesifikasi', 'a'], ['bukti', 'Bukti kepemilikan', 's', BUKTI_TANAH],
+    ['tgl_sert', 'Tanggal sertifikat', 'd'], ['pemilik', 'Nama pemilik', 't'], ['no_sert', 'No. sertifikat', 't'],
+    ['taksasi', 'Nilai taksasi (harga pasar)', 'm']],
+  'Bangunan': [['nama', 'Nama agunan', 't'], ['luas_tanah', 'Luas tanah (m²)', 'n'], ['luas_bangunan', 'Luas bangunan (m²)', 'n'],
+    ['alamat', 'Alamat', 'a'], ['catatan', 'Catatan / spesifikasi', 'a'], ['bukti', 'Bukti kepemilikan', 's', BUKTI_TANAH],
+    ['tgl_sert', 'Tanggal sertifikat', 'd'], ['pemilik', 'Nama pemilik', 't'], ['no_sert', 'No. sertifikat', 't'],
+    ['taksasi', 'Nilai taksasi (harga pasar)', 'm']],
+  'Kendaraan': FIELD_KENDARAAN,
+  'Alat Berat': FIELD_KENDARAAN,
+  'Bilyet Deposito': [['no_rek', 'No. rekening deposito', 't'], ['pemilik', 'Nama pemilik deposito', 't'],
+    ['taksasi', 'Nominal deposito', 'm'], ['tgl_jatuh_tempo', 'Tanggal jatuh tempo', 'd'], ['tenor_auto', 'Tenor (bulan, otomatis)', 'x']],
+  'Tanpa Jaminan (khusus karyawan)': [['gaji', 'Gaji terakhir', 'm'], ['tgl_masuk', 'Tanggal masuk kerja', 'd'],
+    ['lama_auto', 'Lama kerja (otomatis)', 'x']],
+};
+
+// Tanda blok yang memicu render ulang (bukan sekadar pratinjau)
+const RE_RENDER = /^(jenis_debitur|nikah|hubungan\.status|slik\.status|relasi\.\d+\.relasi|relasi\.\d+\.slik\.status|agunan\.\d+\.jenis)$/;
+
+const blank = v => v === undefined || v === null || String(v).trim() === '';
 const pctTxt = v => (v == null ? '-' : (Math.round(v * 1000) / 10) + '%');
 const adaBerkas = (ctx, bagian) => (ctx.berkas || []).some(b => b.bagian === bagian);
 const sumK = (o, keys) => keys.reduce((t, k) => t + num(o && o[k]), 0);
 const sumKeys = (list, obj) => sumK(obj, list.map(x => x[0]));
-const sektorNama = (ctx, kode) => {
-  const s = (ctx.sektor || []).find(x => x.kode === kode);
-  return s ? s.kode + ' — ' + s.nama : (kode || '-');
-};
 const sektorLabel = (ctx, kode) => {
   const s = (ctx.sektor || []).find(x => x.kode === kode);
   return s ? `${s.kode} — ${s.nama}` : '';
 };
+const sektorNama = (ctx, kode) => {
+  const s = (ctx.sektor || []).find(x => x.kode === kode);
+  return s ? s.kode + ' — ' + s.nama : (kode || '-');
+};
+const bulanSelisih = (dari, ke) => Math.max(0, (ke.getFullYear() - dari.getFullYear()) * 12 + (ke.getMonth() - dari.getMonth()));
+const lamaTxt = n => `${Math.floor(n / 12)} tahun ${n % 12} bulan`;
 
-// ---------- Identitas berkas: relasi & agunan memakai uid tetap (bukan indeks) ----------
+// ---------- Identitas berkas: relasi & agunan memakai uid tetap ----------
 const uid_ = () => 'x' + Math.random().toString(36).slice(2, 9);
-// Data lama tanpa uid memakai indeksnya sebagai uid agar berkas yang sudah ada tetap terhubung
 function ensureUids(d) {
   (d.relasi || []).forEach((r, i) => { if (r.uid == null) r.uid = String(i); });
   (d.agunan || []).forEach((a, i) => { if (a.uid == null) a.uid = String(i); });
@@ -55,8 +87,15 @@ async function loadSektor() {
 const roField = (label, value) => `<label class="fld"><span>${esc(label)}</span>
   <input class="input" value="${esc(value || '-')}" readonly></label>`;
 
-// Tanggal lahir: tiga pilihan (tanggal, bulan, tahun) dengan nama bulan Indonesia
-function tglIn(d) {
+// Pilihan dengan nilai dan label berbeda (mis. kualitas kredit "1" → "1 — Lancar")
+const sOpt = (d, k, label, opts, o = {}) => {
+  const cur = String(getPath(d, k) ?? '');
+  return fld(label, `<select class="input" data-k="${k}"><option value="">- pilih -</option>
+    ${opts.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`, o);
+};
+
+// Tanggal lahir: tiga pilihan, dibuat lebih lebar (2 kolom)
+function tglIn(d, o = {}) {
   const [y = '', m = '', dd = ''] = String(d.tgl_lahir || '').split('-');
   const hari = Array.from({ length: 31 }, (_, i) => i + 1)
     .map(n => `<option value="${n}" ${Number(dd) === n ? 'selected' : ''}>${n}</option>`).join('');
@@ -64,7 +103,7 @@ function tglIn(d) {
   const thnNow = new Date().getFullYear();
   const tahun = Array.from({ length: 100 }, (_, i) => thnNow - i)
     .map(n => `<option value="${n}" ${Number(y) === n ? 'selected' : ''}>${n}</option>`).join('');
-  return `<label class="fld"><span>Tanggal lahir</span>
+  return `<label class="fld" style="grid-column:span 2"><span>Tanggal lahir${o.req ? ' <b class="req">*</b>' : ''}</span>
     <div class="tgl3">
       <select class="input" data-tgl="d"><option value="">Tanggal</option>${hari}</select>
       <select class="input" data-tgl="m"><option value="">Bulan</option>${bulan}</select>
@@ -78,33 +117,32 @@ function composeTgl(ctx, el) {
   ctx.draft.tgl_lahir = d && m && y ? `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}` : '';
 }
 
-// Pilihan sektor yang bisa diketik (combobox): menyaring hingga 50 hasil
-function sektorCocok(ctx, q) {
-  const s = String(q || '').trim().toLowerCase();
-  const list = ctx.sektor || [];
-  const f = s ? list.filter(x => (x.kode + ' ' + x.nama).toLowerCase().includes(s)) : list;
-  return { items: f.slice(0, 50), total: f.length };
+// Blok Hubungan dengan Bank (debitur)
+function blokHubungan(d) {
+  const lama = (d.hubungan || {}).status === 'Nasabah lama';
+  return `<div class="slik-box"><b>Hubungan dengan Bank</b>
+    <div class="grid-3">
+      ${sIn(d, 'hubungan.status', 'Status nasabah', HUB_STATUS, { req: true })}
+      ${lama ? `
+        ${sOpt(d, 'hubungan.kualitas', 'Kualitas kredit', SLIK_KUALITAS, { req: true })}
+        ${mIn(d, 'hubungan.baki', 'Baki debet', { req: true })}
+        ${mIn(d, 'hubungan.tunggakan', 'Tunggakan', { req: true })}` : ''}
+    </div></div>`;
 }
-function comboRender(ctx, inp, q) {
-  const box = inp.parentElement.querySelector('.combo-list');
-  const { items, total } = sektorCocok(ctx, q);
-  box.innerHTML = items.length
-    ? items.map(x => `<button type="button" class="combo-item" data-pick="${esc(x.kode)}"><b>${esc(x.kode)}</b> ${esc(x.nama)}</button>`).join('')
-      + (total > items.length ? `<div class="combo-more">Menampilkan ${items.length} dari ${total}. Ketik lebih spesifik.</div>` : '')
-    : '<div class="combo-more">Tidak ada sektor yang cocok.</div>';
-  box.hidden = false;
-}
-function comboClose(ctx, inp) {
-  const box = inp.parentElement.querySelector('.combo-list');
-  if (box) box.hidden = true;
-  inp.value = sektorLabel(ctx, ctx.draft.sektor);
-}
-function pilihSektor(ctx, kode) {
-  ctx.draft.sektor = kode;
-  ctx.invalid.delete('sektor');
-  const inp = $('#sektorInput');
-  if (inp) { inp.value = sektorLabel(ctx, kode); comboClose(ctx, inp); }
-  scheduleSave(ctx);
+
+// Blok Ringkasan Fasilitas Menurut SLIK. p = jalur data, mis. "slik" atau "relasi.0.slik"
+function blokSlik(d, p, req = false) {
+  const histori = (getPath(d, p) || {}).status === 'Ada histori pinjaman';
+  return `<div class="slik-box"><b>Ringkasan Fasilitas Menurut SLIK</b>
+    <div class="grid-3">
+      ${sIn(d, p + '.status', 'Status SLIK', SLIK_STATUS, { req })}
+      ${histori ? `
+        ${mIn(d, p + '.plafon', 'Plafon efektif', { req })}
+        ${mIn(d, p + '.baki', 'Baki debet', { req })}
+        ${sOpt(d, p + '.kualitas', 'Kualitas kredit', SLIK_KUALITAS, { req })}
+        ${tIn(d, p + '.bulan', 'Bulan data', { type: 'month', req })}
+        ${tIn(d, p + '.posisi', 'Posisi data', { type: 'date', req })}` : ''}
+    </div></div>`;
 }
 
 // ---------- Pemuatan form ----------
@@ -112,7 +150,7 @@ Pages.form = async (id, step = 1) => {
   step = Math.min(4, Math.max(1, Number(step) || 1));
   const ctx = {
     id: id || null, step, draft: blankForm(), berkas: [], rec: null, sektor: [],
-    last: null, penyetuju: '', invalid: new Set(), saveQ: Promise.resolve(), timer: null,
+    last: null, penyetuju: '', invalid: new Set(), saveQ: Promise.resolve(), timer: null, lastHtml: '',
   };
   const [r, sek] = await Promise.all([id ? Api.call('get', { id }) : Promise.resolve(null), loadSektor()]);
   if (id) {
@@ -125,7 +163,6 @@ Pages.form = async (id, step = 1) => {
   ensureUids(ctx.draft);
   ctx.sektor = sek;
 
-  // Tidak boleh langsung ke langkah yang lebih jauh dari langkah yang sudah lengkap
   for (let s = 1; s < step; s++) {
     if (cekStep(ctx, s).some(e => e.sev === 'error')) {
       ctx.step = s;
@@ -140,26 +177,68 @@ const STEP_FN = [stepDebitur, stepArus, stepPenilaian, stepPratinjau];
 
 // ---------- Validasi ----------
 // sev: 'error' = wajib (menghalangi langkah berikutnya), 'warn' = catatan saja
+function cekSlik(s, p, label) {
+  const st = s || {};
+  if (blank(st.status)) return [{ k: p + '.status', msg: `${label}: status ringkasan SLIK belum dipilih` }];
+  const out = [];
+  if (st.status === 'Ada histori pinjaman') {
+    [['plafon', 'Plafon efektif'], ['baki', 'Baki debet'], ['kualitas', 'Kualitas kredit'],
+      ['bulan', 'Bulan data'], ['posisi', 'Posisi data']]
+      .forEach(([k, l]) => { if (blank(st[k])) out.push({ k: p + '.' + k, msg: `${label}: ${l} (SLIK) belum diisi` }); });
+  }
+  return out;
+}
+
+function cekAgunan(a, i) {
+  const no = `Agunan ${i + 1}`;
+  if (!a.jenis) return [{ k: `agunan.${i}.jenis`, msg: `${no}: jenis agunan belum dipilih` }];
+  const out = [];
+  (AGUNAN_FIELDS[a.jenis] || []).forEach(([key, label, tipe]) => {
+    if (tipe === 'x') return;
+    const ok = (tipe === 'n' || tipe === 'm') ? num(a[key]) > 0 : !blank(a[key]);
+    if (!ok) out.push({ k: `agunan.${i}.${key}`, msg: `${no}: ${label} belum diisi` });
+  });
+  return out;
+}
+
 function cekStep(ctx, n) {
   const d = ctx.draft, out = [];
   const add = (k, msg, sev = 'error') => out.push({ step: n, k, msg, sev });
+  const addList = list => list.forEach(x => add(x.k, x.msg));
 
   if (n === 1) {
+    if (blank(d.nomor_sppk)) add('nomor_sppk', 'Nomor SPPK belum diisi');
     if (!d.jenis_permohonan) add('jenis_permohonan', 'Jenis permohonan belum dipilih');
     if (!d.skema) add('skema', 'Skema pembayaran belum dipilih');
     if (!d.jenis_debitur) add('jenis_debitur', 'Jenis calon debitur belum dipilih');
-    if (!String(d.nama || '').trim()) add('nama', 'Nama lengkap debitur belum diisi');
+    [['nama', 'Nama lengkap debitur'], ['tempat_lahir', 'Tempat lahir'], ['jk', 'Jenis kelamin'],
+      ['nikah', 'Status pernikahan'], ['pendidikan', 'Pendidikan terakhir'], ['pekerjaan', 'Pekerjaan / jabatan'],
+      ['telp', 'No. WA / telepon'], ['desa', 'Desa / kelurahan'], ['kecamatan', 'Kecamatan'], ['kota', 'Kab / kota'],
+      ['alamat', 'Alamat sesuai KTP'], ['tujuan', 'Tujuan penggunaan pinjaman'], ['profil_usaha', 'Ringkasan profil usaha']]
+      .forEach(([k, l]) => { if (blank(getPath(d, k))) add(k, `${l} belum diisi`); });
     if (!/^\d{16}$/.test(String(d.nik || ''))) add('nik', d.nik ? 'NIK harus 16 digit angka' : 'NIK belum diisi');
+    if (blank(d.tgl_lahir)) add('tgl_lahir', 'Tanggal lahir belum diisi');
     if (!d.sektor) add('sektor', 'Sektor ekonomi belum dipilih');
-    (d.agunan || []).forEach((a, i) => {
-      const no = `Agunan ${i + 1}`;
-      const bilyet = a.jenis === 'Bilyet Deposito';
-      if (!a.jenis) add(`agunan.${i}.jenis`, `${no}: jenis agunan belum dipilih`);
-      if (!(num(bilyet ? a.nominalD : a.taksasi) > 0)) {
-        add(bilyet ? `agunan.${i}.nominalD` : `agunan.${i}.taksasi`,
-          `${no}: ${bilyet ? 'nominal deposito' : 'nilai taksasi'} belum diisi`);
+
+    const h = d.hubungan || {};
+    if (blank(h.status)) add('hubungan.status', 'Hubungan dengan bank belum dipilih');
+    if (h.status === 'Nasabah lama') {
+      [['kualitas', 'Kualitas kredit'], ['baki', 'Baki debet'], ['tunggakan', 'Tunggakan']]
+        .forEach(([k, l]) => { if (blank(h[k])) add('hubungan.' + k, `Nasabah lama: ${l} belum diisi`); });
+    }
+    addList(cekSlik(d.slik, 'slik', 'Debitur'));
+
+    if (d.nikah === 'Menikah') {
+      const idx = (d.relasi || []).findIndex(r => r.relasi === 'Istri / Suami');
+      if (idx < 0) add(null, 'Data istri / suami wajib diisi karena status Menikah');
+      else {
+        const it = d.relasi[idx];
+        if (blank(it.nama)) add(`relasi.${idx}.nama`, 'Nama istri / suami belum diisi');
+        if (!/^\d{16}$/.test(String(it.nik || ''))) add(`relasi.${idx}.nik`, 'NIK istri / suami harus 16 digit');
+        addList(cekSlik(it.slik, `relasi.${idx}.slik`, 'Istri / suami'));
       }
-    });
+    }
+    (d.agunan || []).forEach((a, i) => addList(cekAgunan(a, i)));
     if (!adaBerkas(ctx, 'fotoDebitur')) add(null, 'Foto identitas debitur belum diunggah', 'warn');
   }
 
@@ -172,7 +251,9 @@ function cekStep(ctx, n) {
     if (!(num(a.gaji) + num(a.usaha) + num(a.lain) > 0)) {
       add('arus.gaji', 'Pendapatan belum diisi (gaji, omset, atau pendapatan lain)', 'warn');
     }
-    if (!(sumKeys(HARTA, d.neraca) > 0)) add(null, 'Daftar harta belum diisi', 'warn');
+    if (d.jenis_debitur !== 'Perorangan' && !(sumKeys(HARTA, d.neraca) > 0)) {
+      add(null, 'Daftar harta belum diisi', 'warn');
+    }
   }
 
   if (n === 3) {
@@ -201,7 +282,10 @@ function renderForm(ctx) {
       <button class="step ${i + 1 === ctx.step ? 'is-active' : ''} ${i + 1 < ctx.step ? 'is-done' : ''}" data-go="${i + 1}">${i + 1}. ${esc(t)}</button>`).join('')}</nav>
     <div class="form-layout ${akhir ? 'one' : ''}">
       <section class="card form-main" id="stepBody"></section>
-      ${akhir ? '' : '<aside class="card preview" id="preview"></aside>'}
+      ${akhir ? '' : `<aside class="card preview" id="preview">
+        <h4>Pratinjau Memo (langsung)</h4>
+        <iframe class="preview-frame" id="prevFrame" title="Pratinjau memo" sandbox="allow-same-origin"></iframe>
+      </aside>`}
     </div>
     <div class="bottombar" id="bottombar"></div>`;
 
@@ -243,6 +327,7 @@ function updateBottom(ctx) {
 }
 
 function renderBody(ctx) {
+  if (ctx.step === 1) ensureIstri(ctx.draft);
   const body = $('#stepBody');
   body.innerHTML = STEP_FN[ctx.step - 1](ctx);
   applyInvalid(ctx);
@@ -251,13 +336,21 @@ function renderBody(ctx) {
   ctx.hitung();
 }
 
-// Tandai field yang bermasalah (merah). Mengembalikan elemen pertama yang ditandai.
+// Istri/suami otomatis ditambahkan (baris pertama) saat status Menikah
+function ensureIstri(d) {
+  if (d.nikah !== 'Menikah') return;
+  if (!(d.relasi || []).some(r => r.relasi === 'Istri / Suami')) {
+    d.relasi.unshift({ uid: uid_(), relasi: 'Istri / Suami', slik: { status: '' } });
+  }
+}
+
 function applyInvalid(ctx) {
   let first = null;
   ctx.invalid.forEach(k => {
     let el;
     if (k.startsWith('skor:')) el = $(`#stepBody [data-skor="${k.slice(5)}"]`);
     else if (k === 'sektor') el = $('#sektorInput');
+    else if (k === 'tgl_lahir') el = $('#stepBody .tgl3');
     else el = $(`#stepBody [data-k="${k}"]`);
     if (el) { el.classList.add('is-invalid'); first = first || el; }
   });
@@ -275,10 +368,10 @@ function markOk(ctx, el) {
   ctx.invalid.delete(el.dataset.k || (el.dataset.skor ? 'skor:' + el.dataset.skor : ''));
 }
 
-// Pratinjau perhitungan (debounce). Server tetap sumber kebenaran.
+// Pratinjau memo langsung dari server (debounce). Server tetap sumber kebenaran.
 function attachHitung(ctx) {
   ctx.hitung = debounce(async () => {
-    const r = await Api.call('hitung', { form: ctx.draft });
+    const r = await Api.call('preview', { form: ctx.draft });
     if (!r.ok) return;
     ctx.last = r;
     if (r.penyetuju) ctx.penyetuju = r.penyetuju;
@@ -286,13 +379,23 @@ function attachHitung(ctx) {
       const body = $('#stepBody');
       if (body) { body.innerHTML = stepPratinjau(ctx); loadThumbs(body); }
       updateBottom(ctx);
-    } else {
-      renderPreview(ctx, r);
+      return;
     }
-  }, 300);
+    const fr = $('#prevFrame');
+    if (fr && r.html !== ctx.lastHtml) { fr.srcdoc = r.html; ctx.lastHtml = r.html; }
+    if (ctx.step === 1) {
+      $$('[data-lik]').forEach(el => {
+        const a = r.agunan[Number(el.dataset.lik)];
+        el.value = a ? rp(a.likuidasi) : '-';
+      });
+    }
+    if (ctx.step === 3) {
+      const rc = $('#rpcCell');
+      if (rc) rc.textContent = r.skor_rpc;
+    }
+  }, 500);
 }
 
-// Total pada langkah 2 dihitung di browser agar langsung terlihat saat mengetik
 function updateSums(ctx) {
   const d = ctx.draft, a = d.arus || {}, n = d.neraca || {};
   const set = (k, v) => document.querySelectorAll(`#stepBody [data-sumfor="${k}"]`).forEach(el => { el.textContent = rp(v); });
@@ -307,10 +410,68 @@ function updateSums(ctx) {
   });
 }
 
-// ---------- Langkah 1: Data debitur & agunan ----------
+// ---------- Langkah 1: Data debitur, hubungan, SLIK, relasi, dan agunan ----------
 function stepDebitur(ctx) {
   const d = ctx.draft;
   const me = Session.get().user;
+  const menikah = d.nikah === 'Menikah';
+
+  const relasiHtml = (d.relasi || []).map((r, i) => {
+    const istri = r.relasi === 'Istri / Suami';
+    const wajib = istri && menikah;
+    return `
+    <div class="sub-card"><div class="sub-head"><b>${istri ? 'Istri / Suami' : 'Relasi ' + (i + 1)}${wajib ? ' <b class="req">*</b>' : ''}</b>
+      ${wajib ? '' : `<button class="btn-ghost-dark sm" style="width:auto;margin:0;color:var(--text)" data-act="delRelasi" data-i="${i}">Hapus</button>`}</div>
+      <div class="with-photo"><div>
+        <div class="grid-3">
+          ${sIn(d, `relasi.${i}.relasi`, 'Hubungan', SEL_RELASI)}
+          ${tIn(d, `relasi.${i}.nama`, 'Nama lengkap', { req: wajib })}
+          ${tIn(d, `relasi.${i}.nik`, 'NIK (16 digit)', { req: wajib, maxlen: 16 })}
+          ${tIn(d, `relasi.${i}.telp`, 'Telepon')}
+        </div>
+        ${blokSlik(d, `relasi.${i}.slik`, wajib)}
+      </div>
+      <aside class="photo-side"><b>Foto ${istri ? 'istri / suami' : 'relasi ' + (i + 1)}</b>${berkasGrid(ctx, bagianRelasi(r))}</aside>
+      </div>
+    </div>`;
+  }).join('');
+
+  const agunanHtml = (d.agunan || []).map((a, i) => {
+    const fields = AGUNAN_FIELDS[a.jenis] || [];
+    const body = fields.map(([key, label, tipe, opt]) => {
+      const k = `agunan.${i}.${key}`;
+      if (tipe === 'x') {
+        const v = key === 'tenor_auto'
+          ? (a.tgl_jatuh_tempo ? lamaTxt(bulanSelisih(new Date(), new Date(a.tgl_jatuh_tempo))) : '-')
+          : (a.tgl_masuk ? lamaTxt(bulanSelisih(new Date(a.tgl_masuk), new Date())) : '-');
+        return roField(label, v);
+      }
+      if (tipe === 'm') return mIn(d, k, label, { req: true });
+      if (tipe === 'n') return nIn(d, k, label, { req: true });
+      if (tipe === 'd') return tIn(d, k, label, { type: 'date', req: true });
+      if (tipe === 's') return sIn(d, k, label, opt, { req: true });
+      if (tipe === 'a') return aIn(d, k, label, { req: true });
+      return tIn(d, k, label, { req: true });
+    }).join('');
+    const lik = ctx.last && ctx.last.agunan[i] ? rp(ctx.last.agunan[i].likuidasi) : '-';
+    const adaLikuidasi = fields.some(f => f[0] === 'taksasi') || a.jenis === 'Tanpa Jaminan (khusus karyawan)';
+    return `
+    <div class="sub-card"><div class="sub-head"><b>Agunan ${i + 1}</b>
+      <button class="btn-ghost-dark sm" style="width:auto;margin:0;color:var(--text)" data-act="delAgunan" data-i="${i}">Hapus</button></div>
+      <div class="with-photo"><div>
+        <div class="grid-3">
+          ${sIn(d, `agunan.${i}.jenis`, 'Jenis agunan', JENIS_AGUNAN, { req: true })}
+          ${body}
+          ${adaLikuidasi ? `
+          <label class="fld"><span>Nilai likuidasi (otomatis dari % × taksasi)</span>
+            <input class="input" readonly data-lik="${i}" value="${lik}"></label>` : ''}
+        </div>
+      </div>
+      <aside class="photo-side"><b>Dokumen agunan ${i + 1}</b>${berkasGrid(ctx, bagianAgunan(a))}</aside>
+      </div>
+    </div>`;
+  }).join('');
+
   return `
   <h3>A.0 Data Account Officer</h3>
   <div class="grid-3">
@@ -321,31 +482,34 @@ function stepDebitur(ctx) {
 
   <h3>A.1 Informasi Permohonan</h3>
   <div class="grid-3">
+    ${tIn(d, 'nomor_sppk', 'Nomor SPPK (isi manual)', { req: true, maxlen: 60, ph: 'Contoh: KRD/KC/202611/0001' })}
     ${sIn(d, 'jenis_permohonan', 'Jenis permohonan', ['Kredit Modal Kerja', 'Kredit Investasi', 'Kredit Konsumtif'], { req: true })}
     ${sIn(d, 'skema', 'Skema pembayaran', ['Modal Kerja', 'Investasi', 'Konsumtif'], { req: true })}
     ${sIn(d, 'jenis_debitur', 'Jenis calon debitur', ['Perorangan', 'Badan Usaha'], { req: true })}
   </div>
+  <small class="hint">Nomor SPPK harus unik. Nomor ini dipakai saat permohonan diajukan.</small>
 
   <h3>A.2 Identitas Calon Debitur</h3>
-  <div class="with-photo">
+  <div class="with-photo"><div>
     <div class="grid-3">
       ${tIn(d, 'nama', 'Nama lengkap (sesuai KTP)', { req: true })}
       ${tIn(d, 'nik', 'NIK (16 digit)', { req: true, maxlen: 16 })}
-      ${tIn(d, 'tempat_lahir', 'Tempat lahir')}
-      ${tglIn(d)}
-      ${sIn(d, 'jk', 'Jenis kelamin', SEL_JK)}
-      ${sIn(d, 'nikah', 'Status pernikahan', SEL_NIKAH)}
-      ${sIn(d, 'pendidikan', 'Pendidikan terakhir', SEL_DIDIK)}
-      ${tIn(d, 'pekerjaan', 'Pekerjaan / jabatan')}
-      ${tIn(d, 'telp', 'No. WA / telepon')}
-      ${tIn(d, 'email', 'Email', { type: 'email' })}
-      ${tIn(d, 'desa', 'Desa / kelurahan')}
-      ${tIn(d, 'kecamatan', 'Kecamatan')}
-      ${tIn(d, 'kota', 'Kab / kota')}
-      ${aIn(d, 'alamat', 'Alamat sesuai KTP')}
+      ${tIn(d, 'tempat_lahir', 'Tempat lahir', { req: true })}
+      ${tglIn(d, { req: true })}
+      ${sIn(d, 'jk', 'Jenis kelamin', SEL_JK, { req: true })}
+      ${sIn(d, 'nikah', 'Status pernikahan', SEL_NIKAH, { req: true })}
+      ${sIn(d, 'pendidikan', 'Pendidikan terakhir', SEL_DIDIK, { req: true })}
+      ${tIn(d, 'pekerjaan', 'Pekerjaan / jabatan', { req: true })}
+      ${tIn(d, 'telp', 'No. WA / telepon', { req: true })}
+      ${tIn(d, 'desa', 'Desa / kelurahan', { req: true })}
+      ${tIn(d, 'kecamatan', 'Kecamatan', { req: true })}
+      ${tIn(d, 'kota', 'Kab / kota', { req: true })}
+      ${aIn(d, 'alamat', 'Alamat sesuai KTP', { req: true })}
     </div>
-    <aside class="photo-side"><b>Foto identitas debitur</b>${berkasGrid(ctx, 'fotoDebitur')}</aside>
+    ${blokHubungan(d)}
+    ${blokSlik(d, 'slik', true)}
   </div>
+  <aside class="photo-side"><b>Foto identitas debitur</b>${berkasGrid(ctx, 'fotoDebitur')}</aside></div>
 
   <h3>A.3 Tujuan Pinjaman & Profil Usaha</h3>
   <div class="grid-2">
@@ -357,50 +521,24 @@ function stepDebitur(ctx) {
       </div>
       <small class="hint">Ketik kode atau sebagian nama sektor, lalu pilih dari daftar.</small>
     </div>
-    ${tIn(d, 'tujuan', 'Tujuan penggunaan pinjaman')}
-    ${aIn(d, 'profil_usaha', 'Ringkasan profil usaha / pekerjaan')}
+    ${tIn(d, 'tujuan', 'Tujuan penggunaan pinjaman', { req: true })}
+    ${aIn(d, 'profil_usaha', 'Ringkasan profil usaha / pekerjaan', { req: true })}
   </div>
 
   <h3>A.4 Pasangan, Keluarga & Relasi</h3>
-  ${d.relasi.map((r, i) => `
-    <div class="sub-card"><div class="sub-head"><b>Relasi ${i + 1}</b>
-      <button class="btn-ghost-dark sm" style="width:auto;margin:0;color:var(--text)" data-act="delRelasi" data-i="${i}">Hapus</button></div>
-      <div class="with-photo">
-        <div class="grid-3">
-          ${sIn(d, `relasi.${i}.relasi`, 'Hubungan', SEL_RELASI)}
-          ${tIn(d, `relasi.${i}.nama`, 'Nama lengkap')}
-          ${tIn(d, `relasi.${i}.nik`, 'NIK')}
-          ${tIn(d, `relasi.${i}.telp`, 'Telepon')}
-        </div>
-        <aside class="photo-side"><b>Foto relasi ${i + 1}</b>${berkasGrid(ctx, bagianRelasi(r))}</aside>
-      </div>
-    </div>`).join('')}
+  <p class="hint">Jika status pernikahan Menikah, data istri / suami wajib diisi.</p>
+  ${relasiHtml}
   <button class="btn-secondary" data-act="addRelasi">+ Tambah relasi</button>
 
   <h3>A.5 Data Agunan / Jaminan</h3>
-  ${d.agunan.map((a, i) => `
-    <div class="sub-card"><div class="sub-head"><b>Agunan ${i + 1}</b>
-      <button class="btn-ghost-dark sm" style="width:auto;margin:0;color:var(--text)" data-act="delAgunan" data-i="${i}">Hapus</button></div>
-      <div class="with-photo">
-        <div class="grid-3">
-          ${sIn(d, `agunan.${i}.jenis`, 'Jenis agunan', JENIS_AGUNAN)}
-          ${tIn(d, `agunan.${i}.nama`, 'Nama / uraian agunan')}
-          ${sIn(d, `agunan.${i}.bukti`, 'Bukti kepemilikan', ['SHM', 'SHGB', 'AJB', 'BPKB', 'Bilyet', 'Lainnya'])}
-          ${tIn(d, `agunan.${i}.noSert`, 'No. sertifikat / BPKB / rekening')}
-          ${aIn(d, `agunan.${i}.alamat`, 'Alamat agunan')}
-          ${a.jenis === 'Bilyet Deposito'
-            ? mIn(d, `agunan.${i}.nominalD`, 'Nominal deposito')
-            : mIn(d, `agunan.${i}.taksasi`, 'Nilai taksasi pasar')}
-        </div>
-        <aside class="photo-side"><b>Dokumen agunan ${i + 1}</b>${berkasGrid(ctx, bagianAgunan(a))}</aside>
-      </div>
-    </div>`).join('')}
+  ${agunanHtml}
   <button class="btn-secondary" data-act="addAgunan">+ Tambah agunan</button>`;
 }
 
 // ---------- Langkah 2: Arus kas, daftar harta, dan neraca ----------
 function stepArus(ctx) {
   const d = ctx.draft;
+  const perorangan = d.jenis_debitur === 'Perorangan';
   const list = (rows, prefix) => rows.map(([k, l]) => mIn(d, prefix + k, l)).join('');
   return `
   <h3>B.0 Pinjaman yang Diusulkan</h3>
@@ -430,10 +568,9 @@ function stepArus(ctx) {
   <div class="sum-row"><span>Total beban rumah tangga</span><b data-sumfor="rt">-</b></div>
 
   <h3>B.4 Kewajiban kepada Pihak Lain</h3>
-  <div class="grid-2">
-    ${mIn(d, 'arus.angsuran_hutang', 'Angsuran hutang lain / bulan')}
-  </div>
+  <div class="grid-2">${mIn(d, 'arus.angsuran_hutang', 'Angsuran hutang lain / bulan')}</div>
 
+  ${perorangan ? '' : `
   <h3>B.5 Daftar Harta</h3>
   <div class="grid-3">${list(HARTA, 'neraca.')}</div>
   <div class="sum-row"><span>Total harta (aset)</span><b data-sumfor="aset">-</b></div>
@@ -449,7 +586,7 @@ function stepArus(ctx) {
       <div class="sum-row"><span>Modal sendiri (aktiva − kewajiban)</span><b data-sumfor="modal">-</b></div>
       <div class="sum-row"><span>DAR (kewajiban ÷ aktiva)</span><b data-sumfor="dar">-</b></div>
     </div>
-  </div>`;
+  </div>`}`;
 }
 
 // ---------- Langkah 3: Penilaian 5C dengan keterangan skor ----------
@@ -503,6 +640,7 @@ function stepPratinjau(ctx) {
   const langkah = [...new Set(hard.map(e => e.step))];
   const kv = (l, v) => `<div class="pv-kv"><small>${esc(l)}</small><b>${v}</b></div>`;
   const alamat = [d.alamat, d.desa, d.kecamatan, d.kota].filter(Boolean).join(', ') || '-';
+  const sesi = Session.get().user;
 
   const agunanRows = (d.agunan || []).map((a, i) => {
     const hs = ctx.last.agunan[i] || {};
@@ -534,11 +672,12 @@ function stepPratinjau(ctx) {
   ${warn.length ? `<div class="pv-alert pv-warn"><b>Catatan</b><ul>${warn.map(e => `<li>${esc(e.msg)}</li>`).join('')}</ul></div>` : ''}
 
   <section class="pv-sec"><h4>A. Data Debitur</h4><div class="pv-grid">
-    ${kv('Account Officer', esc(Session.get().user.nama))}${kv('Kantor', esc(Session.get().user.kantorNama || Session.get().user.kantor))}
+    ${kv('Nomor SPPK', esc(d.nomor_sppk || '-'))}${kv('Account Officer', esc(sesi.nama))}
     ${kv('Nama lengkap', esc(d.nama || '-'))}${kv('NIK', esc(d.nik || '-'))}
     ${kv('Tanggal lahir', esc(tglPanjang(d.tgl_lahir) || '-'))}${kv('Pekerjaan', esc(d.pekerjaan || '-'))}
     ${kv('Jenis permohonan', esc(d.jenis_permohonan || '-'))}${kv('Skema pembayaran', esc(d.skema || '-'))}
     ${kv('Sektor ekonomi (KBLI)', esc(sektorNama(ctx, d.sektor)))}${kv('Telepon', esc(d.telp || '-'))}
+    ${kv('Hubungan dengan bank', esc((d.hubungan || {}).status || '-'))}${kv('Status SLIK', esc((d.slik || {}).status || '-'))}
     ${kv('Alamat', esc(alamat))}${kv('Tujuan pinjaman', esc(d.tujuan || '-'))}
   </div></section>
 
@@ -552,10 +691,10 @@ function stepPratinjau(ctx) {
     ${kv('RPC', h.sisa > 0 ? (h.rpc * 100).toFixed(2) + '%' : 'Tidak dapat dihitung')}
   </div></section>
 
-  <section class="pv-sec"><h4>C. Neraca</h4><div class="pv-grid">
+  ${d.jenis_debitur === 'Perorangan' ? '' : `<section class="pv-sec"><h4>C. Neraca</h4><div class="pv-grid">
     ${kv('Total harta (aset)', rp(h.aset))}${kv('Total kewajiban', rp(h.kewajiban))}
     ${kv('Modal sendiri', rp(h.modal))}${kv('DAR', h.dar != null ? (h.dar * 100).toFixed(2) + '%' : '-')}
-  </div></section>
+  </div></section>`}
 
   <section class="pv-sec"><h4>D. Agunan</h4>
     ${(d.agunan || []).length
@@ -579,79 +718,56 @@ function stepPratinjau(ctx) {
   </section>`;
 }
 
-// ---------- Panel kanan (langkah 1-3) ----------
-function renderPreview(ctx, r) {
-  const el = $('#preview');
-  if (!el) return;
-  const h = r.hasil;
-
-  if (ctx.step === 1) {
-    const cov = ctx.draft.plafon ? ((r.agunan || []).reduce((s, a) => s + num(a.likuidasi), 0) / num(ctx.draft.plafon) * 100) : 0;
-    const rows = (r.agunan || []).map(a => `<tr><td>${esc(a.jenis)}</td><td class="num">${rp(a.likuidasi)}</td></tr>`).join('');
-    el.innerHTML = `<h4>Agunan & Likuidasi</h4>
-      ${rows ? `<table class="table"><tbody>${rows}</tbody></table>
-        <p class="hint">Coverage likuidasi terhadap plafon: <b>${cov.toFixed(1)}%</b></p>`
-        : '<p class="muted">Belum ada agunan.</p>'}
-      <p class="hint">Foto setiap agunan dan relasi diunggah di kolom samping pada bagian masing-masing.</p>`;
-  } else if (ctx.step === 2) {
-    el.innerHTML = `<h4>Kapasitas Bayar</h4>
-      <dl class="kv">
-        <dt>Angsuran pokok</dt><dd>${rp(h.angPokok)}</dd>
-        <dt>Angsuran bunga</dt><dd>${rp(h.angBunga)}</dd>
-        <dt>Rencana angsuran</dt><dd><b>${rp(h.renc)}</b></dd>
-        <dt>Total pendapatan</dt><dd>${rp(h.pend)}</dd>
-        <dt>Total beban</dt><dd>${rp(h.beban)}</dd>
-        <dt>Laba bersih</dt><dd>${rp(h.laba)}</dd>
-        <dt>Sisa penghasilan</dt><dd>${rp(h.sisa)}</dd>
-        <dt>Modal sendiri</dt><dd>${rp(h.modal)}</dd>
-        <dt>DAR</dt><dd>${h.dar != null ? (h.dar * 100).toFixed(2) + '%' : '-'}</dd>
-      </dl>
-      ${h.sisa > 0
-        ? `<div class="rpc ${h.rpc > 0.8 ? 'rpc-bad' : ''}"><small>RPC</small><b>${(h.rpc * 100).toFixed(2)}%</b>
-             ${h.rpc > 0.8 ? '<span>Di atas 80%: perlu tinjauan struktur kredit.</span>' : ''}</div>`
-        : '<div class="rpc rpc-bad"><small>RPC</small><b>Tidak dapat dihitung</b><span>Sisa penghasilan tidak positif.</span></div>'}
-      ${h.efektif != null ? `<p class="hint">Bunga efektif KAB: ${h.efektif}% p.a.</p>` : ''}`;
-  } else {
-    el.innerHTML = `<h4>Hasil Penilaian</h4>
-      <div class="score">${Number(h.total).toFixed(2)}<small>dari 5.00</small></div>
-      <p>${chipPred(h.predikat)}</p>
-      <table class="table pv-mini"><tbody>${r.detail.map((dt, i) => `
-        <tr><td>${esc(FLAT_IND[i].l)}</td><td class="c">${pctTxt(dt.bobotInd)}</td><td class="num"><b>${dt.skor || '-'}</b></td></tr>`).join('')}
-      </tbody></table>
-      <p class="hint">Nilai akhir dihitung ulang di server saat diajukan.</p>`;
-    const rc = $('#rpcCell');
-    if (rc) rc.textContent = r.skor_rpc;
-  }
-  loadThumbs(el);
+// ---------- Penanganan event ----------
+// Pratinjau diperbarui di setiap perubahan; render ulang hanya jika bagian form berubah
+function edited(ctx) {
+  scheduleSave(ctx);
+  ctx.hitung();
 }
 
-// ---------- Penanganan event ----------
-// Perhitungan server hanya dipanggil bila field yang memengaruhi hasil berubah (lebih cepat)
-const HITUNG_KEY = /^(plafon|tenor|bunga|jenis_angsuran|arus\.|agunan\.|neraca\.|skor|sektor)/;
-function edited(ctx, k) {
-  scheduleSave(ctx);
-  if (!k || HITUNG_KEY.test(k)) ctx.hitung();
+// Pemisah ribuan saat mengetik, dengan posisi kursor dijaga
+function reformatMoney(el) {
+  const raw = el.value;
+  const pos = el.selectionStart ?? raw.length;
+  const digitsKanan = raw.slice(pos).replace(/\D/g, '').length;
+  const digits = raw.replace(/\D/g, '');
+  const formatted = digits ? Number(digits).toLocaleString('id-ID') : '';
+  el.value = formatted;
+  let i = formatted.length, hitung = 0;
+  while (i > 0 && hitung < digitsKanan) { i--; if (/\d/.test(formatted[i])) hitung++; }
+  el.setSelectionRange(i, i);
 }
 
 function formInput(e, ctx) {
   const el = e.target;
   if (el.dataset.combo) { comboRender(ctx, el, el.value); return; }
   if (el.dataset.k && el.tagName !== 'SELECT') {
-    setPath(ctx.draft, el.dataset.k, parseVal(el));
+    let v;
+    if (el.dataset.n === 'm') {
+      reformatMoney(el);
+      v = el.value.trim() === '' ? '' : parseVal(el);
+    } else {
+      v = parseVal(el);
+    }
+    setPath(ctx.draft, el.dataset.k, v);
     markOk(ctx, el);
     if (ctx.step === 2) updateSums(ctx);
-    edited(ctx, el.dataset.k);
+    edited(ctx);
   }
 }
 
 async function formChange(e, ctx) {
   const el = e.target;
-  if (el.dataset.tgl) { composeTgl(ctx, el); return edited(ctx, 'tgl_lahir'); }
+  if (el.dataset.tgl) { composeTgl(ctx, el); return edited(ctx); }
   if (el.dataset.k && el.tagName === 'SELECT') {
     setPath(ctx.draft, el.dataset.k, el.value);
     markOk(ctx, el);
-    if (/^agunan\.\d+\.jenis$/.test(el.dataset.k)) { scheduleSave(ctx); return renderBody(ctx); }
-    return edited(ctx, el.dataset.k);
+    if (RE_RENDER.test(el.dataset.k)) {
+      if (el.dataset.k === 'nikah') ensureIstri(ctx.draft);
+      scheduleSave(ctx);
+      return renderBody(ctx);
+    }
+    return edited(ctx);
   }
   if (el.dataset.skor) {
     ctx.draft.skor[el.dataset.skor] = Number(el.value) || 0;
@@ -662,7 +778,7 @@ async function formChange(e, ctx) {
       row.querySelector('[data-skorval]').textContent = v || '-';
       row.querySelector('[data-ket]').textContent = SKOR_KET[v] || '-';
     }
-    return edited(ctx, 'skor');
+    return edited(ctx);
   }
   if (el.dataset.k && el.dataset.n === 'm') {
     el.value = fmtMoney(getPath(ctx.draft, el.dataset.k));
@@ -680,10 +796,21 @@ async function formClick(e, ctx) {
     case 'save': return saveDraft(ctx, true);
     case 'next': return nextStep(ctx);
     case 'submit': return submitForm(ctx);
-    case 'addRelasi': ctx.draft.relasi.push({ uid: uid_(), relasi: 'Istri / Suami' }); scheduleSave(ctx); return renderBody(ctx);
-    case 'delRelasi': ctx.draft.relasi.splice(Number(t.dataset.i), 1); scheduleSave(ctx); return renderBody(ctx);
-    case 'addAgunan': ctx.draft.agunan.push({ uid: uid_(), jenis: JENIS_AGUNAN[0] }); scheduleSave(ctx); return renderBody(ctx);
-    case 'delAgunan': ctx.draft.agunan.splice(Number(t.dataset.i), 1); scheduleSave(ctx); return renderBody(ctx);
+    case 'addRelasi':
+      ctx.draft.relasi.push({ uid: uid_(), relasi: 'Lainnya', slik: { status: '' } });
+      scheduleSave(ctx); return renderBody(ctx);
+    case 'delRelasi': {
+      const r = ctx.draft.relasi[Number(t.dataset.i)];
+      if (r && r.relasi === 'Istri / Suami' && ctx.draft.nikah === 'Menikah') return;
+      ctx.draft.relasi.splice(Number(t.dataset.i), 1);
+      scheduleSave(ctx); return renderBody(ctx);
+    }
+    case 'addAgunan':
+      ctx.draft.agunan.push({ uid: uid_(), jenis: JENIS_AGUNAN[0] });
+      scheduleSave(ctx); return renderBody(ctx);
+    case 'delAgunan':
+      ctx.draft.agunan.splice(Number(t.dataset.i), 1);
+      scheduleSave(ctx); return renderBody(ctx);
     case 'delBerkas': return deleteBerkas(ctx, t.dataset.id);
   }
 }
@@ -712,7 +839,6 @@ function queueSave(ctx, notify = false) {
   return ctx.saveQ;
 }
 
-// Simpan otomatis 1 detik setelah pengguna berhenti mengetik
 function scheduleSave(ctx) {
   clearTimeout(ctx.timer);
   ctx.timer = setTimeout(() => queueSave(ctx, false), 1000);
@@ -742,7 +868,6 @@ async function goStep(ctx, n) {
   renderForm(ctx);
 }
 
-// Tombol "Lanjut": langkah ini harus lengkap sebelum pindah
 async function nextStep(ctx) {
   const errs = cekStep(ctx, ctx.step);
   const hard = errs.filter(e => e.sev === 'error');
@@ -762,7 +887,6 @@ async function nextStep(ctx) {
   return goStep(ctx, ctx.step + 1);
 }
 
-// Pengajuan: periksa semua langkah, tampilkan daftar kekurangan di tengah layar
 async function submitForm(ctx) {
   const errs = cekSemua(ctx);
   const hard = errs.filter(e => e.sev === 'error');
@@ -848,4 +972,34 @@ async function deleteBerkas(ctx, idBerkas) {
   const g = await Api.call('get', { id: ctx.id });
   if (g.ok) ctx.berkas = g.berkas || [];
   renderBody(ctx);
+}
+
+// ---------- Sektor (combobox) ----------
+function sektorCocok(ctx, q) {
+  const s = String(q || '').trim().toLowerCase();
+  const list = ctx.sektor || [];
+  const f = s ? list.filter(x => (x.kode + ' ' + x.nama).toLowerCase().includes(s)) : list;
+  return { items: f.slice(0, 50), total: f.length };
+}
+function comboRender(ctx, inp, q) {
+  const box = inp.parentElement.querySelector('.combo-list');
+  const { items, total } = sektorCocok(ctx, q);
+  box.innerHTML = items.length
+    ? items.map(x => `<button type="button" class="combo-item" data-pick="${esc(x.kode)}"><b>${esc(x.kode)}</b> ${esc(x.nama)}</button>`).join('')
+      + (total > items.length ? `<div class="combo-more">Menampilkan ${items.length} dari ${total}. Ketik lebih spesifik.</div>` : '')
+    : '<div class="combo-more">Tidak ada sektor yang cocok.</div>';
+  box.hidden = false;
+}
+function comboClose(ctx, inp) {
+  const box = inp.parentElement.querySelector('.combo-list');
+  if (box) box.hidden = true;
+  inp.value = sektorLabel(ctx, ctx.draft.sektor);
+}
+function pilihSektor(ctx, kode) {
+  ctx.draft.sektor = kode;
+  ctx.invalid.delete('sektor');
+  const inp = $('#sektorInput');
+  if (inp) { inp.value = sektorLabel(ctx, kode); comboClose(ctx, inp); }
+  scheduleSave(ctx);
+  ctx.hitung();
 }

@@ -40,16 +40,18 @@ const BEBAN = [
   ['lainU', 'Beban usaha lainnya'], ['hidup', 'Biaya hidup keluarga'], ['pendidikan', 'Biaya pendidikan anak'],
   ['lainRT', 'Beban rumah tangga lainnya'],
 ];
-const JENIS_AGUNAN = ['Tanah / Bangunan', 'Kendaraan', 'Alat Berat', 'Bilyet Deposito', 'Tanpa Jaminan (khusus karyawan)'];
+const JENIS_AGUNAN = ['Tanah', 'Bangunan', 'Kendaraan', 'Alat Berat', 'Bilyet Deposito', 'Tanpa Jaminan (khusus karyawan)'];
 const SEL_RELASI = ['Istri / Suami', 'Orang Tua', 'Anak', 'Saudara', 'Badan Usaha', 'Lainnya'];
 const SEL_NIKAH = ['Belum Menikah', 'Menikah', 'Janda', 'Duda'];
 const SEL_JK = ['Laki-laki', 'Perempuan'];
 const SEL_DIDIK = ['Tidak Sekolah', 'SD', 'SMP', 'SMA', 'S1', 'S2', 'S3'];
 
 const blankForm = () => ({
-  jenis_permohonan: '', skema: '', jenis_debitur: '', nama: '', nik: '', pekerjaan: '',
-  tempat_lahir: '', tgl_lahir: '', jk: '', nikah: '', pendidikan: '', telp: '', email: '',
+  nomor_sppk: '', jenis_permohonan: '', skema: '', jenis_debitur: '', nama: '', nik: '', pekerjaan: '',
+  tempat_lahir: '', tgl_lahir: '', jk: '', nikah: '', pendidikan: '', telp: '',
   alamat: '', desa: '', kecamatan: '', kota: '', sektor: '', tujuan: '', profil_usaha: '',
+  hubungan: { status: '', kualitas: '', baki: '', tunggakan: '' },
+  slik: { status: '' },
   plafon: 0, tenor: 0, bunga: 0, jenis_angsuran: '',
   arus: { gaji: 0, usaha: 0, lain: 0, angsuran_hutang: 0, beban: {} },
   skor: {}, relasi: [], agunan: [], neraca: {},
